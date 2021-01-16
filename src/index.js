@@ -1,8 +1,8 @@
 'use strict'
 
 import Assistant from './assistant.js'
-import Scraper from './scraper.js'
-import { Task } from './core.js'
+import Scraper   from './scraper.js'
+import { Task }  from './core.js'
 
 const Cli = async argv => {
 
@@ -25,5 +25,5 @@ const Cli = async argv => {
 	}
 }
 
-export { Cli, Task }
+export { Cli, Scraper, Task }
 export default Scraper

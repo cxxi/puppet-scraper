@@ -21,22 +21,26 @@ export default class Scraper extends Abstract
 		return this
 	}
 
+	getTasks(name = false)
+	{
+		return this.tasksManager.getTask(name)
+	}
+
 	async mount(targets)
 	{
 		try
 		{
-			const tasks = []
-
-			for (const t of Array.isArray(targets) ? targets : [targets])
+			for (const target of Array.isArray(targets) ? targets : [targets])
 			{
-				let s = t.constructor === String
-					? await this._load_scripts(t)
-					: t
-
-				tasks.push(await this._check_task(s))
+				let tasks = target.constructor === String
+					? await this._loadScript(target)
+					: target
+				
+				await this.tasksManager.enqueue(
+					Array.isArray(tasks) ? tasks : [tasks]
+				)
 			}
 
-			this.tasks = tasks.flat()
 			return this
 		}
 		
@@ -52,11 +56,9 @@ export default class Scraper extends Abstract
 
 			const result = {}
 
-			if (this.opt.sort) this._sort_tasks()
-
-			for (const task of this.tasks)
+			for (const task of this.getTasks())
 			{
-				await this.navInstance.goto(task.parameters.url)
+				await this.navInstance.goto(task.endpoint)
 				result[task.name] = await task.run(this.navInstance)
 			}
 

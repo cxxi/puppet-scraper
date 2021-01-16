@@ -3,6 +3,14 @@
 import fs from 'fs'
 
 
+const defaultOptions = {
+	rawResult: false, 
+	merge: false,
+	sort: false,
+	downloads: [],
+	dlSeparator: '>'
+}
+
 class Abstract
 {
 	constructor(options)
@@ -18,7 +26,28 @@ class Abstract
 			this.opt = Utils._deepAssign(this.opt, o)
 		}
 
-		this.tasks = []
+		this.tasksManager = new TasksManager()
+	}
+
+	async _loadScript(target)
+	{
+		if (!target.startsWith('/')) {
+			this._err(`Invalid path, should be absolute (${target})`)
+		}
+
+		if (await !fs.existsSync(target)) {
+			this._err(`Method mount received an invalid path (${target})`)
+		}
+
+		if ((fs.statSync(target)).isDirectory()) {
+			return await Promise.all(fs.readdirSync(target).map(async s => {
+				return this.tasksManager.build(await import(`${target}/${s}`))
+			}))
+		} 
+
+		if ((fs.statSync(target)).isFile()) {
+			return this.tasksManager.build(await import(target))
+		}
 	}
 }
 
@@ -30,17 +59,19 @@ class Task
 			throw new Error('Initialization failed') 
 		}
 		this.name = name
+		return this
 	}
 
-	define(func, params = {})
+	define(params = {}, func)
 	{
-		if (params.url === undefined || !Utils._checkUrl(params.url)) {
-			throw new Error('Invalid url parameters')
+		if (params.endpoint === undefined || !Utils._checkUrl(params.endpoint)) {
+			throw new Error('Invalid endpoint parameters')
 		}
-		this.url = params.url
+		this.endpoint = params.endpoint
 		this.run = func
 		this.parameters = params
 		// Object.seal(this)
+		return this
 	}
 
 
@@ -55,37 +86,57 @@ class Task
 
 class TasksManager
 {
-	async _load_scripts(target)
+	constructor()
 	{
-		if (!target.startsWith('/')) {
-			this._err(`Invalid path, should be absolute (${target})`)
-		}
+		this.tasks = []
+		// make weakmap
+		this.sortable  = false
+		// make updatable or not ?
+	}
 
-		if (await !fs.existsSync(target)) {
-			this._err(`Method mount received an invalid path (${target})`)
-		}
+	getTask(name = false)
+	{
+		name ? this.tasks.filter(t => t.name == name)[0] : this.tasks 
+	}
 
-		if ((fs.statSync(target)).isDirectory()) {
-			return await Promise.all(fs.readdirSync(target).map(async s => {
-				return this._build_task(await import(`${target}/${s}`))
-			}))
-		} 
+	list()
+	{
+		return this.tasks.map(t => t.name)
+	}
 
-		if ((fs.statSync(target)).isFile()) {
-			return this._build_task(await import(target))
+	build(script)
+	{
+		return (new Task(script.name)).define(script.parameters, script.run)
+	}
+
+	sort(reverse = false)
+	{
+		// NEED REFACT
+		if (this.tasks.length > 1 && this.options.sort) {
+			const order = m => m.parameters.order
+			this.tasks.sort((a, b) => {
+				if (order(a) == undefined || order(b) == undefined) {
+					this._err(`Disable <sort> option or specify <order> parameter on tasks`)
+				}
+				return order(a) - order(b)
+			})
 		}
 	}
 
-	_build_task(script)
+	async enqueue(tasks)
 	{
-		const task = new Task(script.name)
-		task.define(script.run, script.parameters)
-		return task
+		for (let task of tasks)
+		{
+			task = await this.check(task)
+			this.tasks.push(task)
+			console.log(`> Enqueue Task ${task.name} (${this.tasks.length} tasks in queue)\n`)
+			if (this.sortable) this.sort()
+		}
 	}
 		
-	async _check_task(func)
+	async check(task)
 	{
-		for (const f of Array.isArray(func) ? func : [func])
+		for (const f of Array.isArray(task) ? task : [task])
 		{
 			if (typeof f.name != 'string' || f.name.length < 1) {
 				// add verif uppercase + lowercase + _ + numeric
@@ -94,8 +145,8 @@ class TasksManager
 			}else if (typeof f.parameters != 'object') {
 				this._err(`Script must export a constant "parameters" (Object)`)
 
-			} else if (typeof f.parameters.url != 'string' || await !Utils._checkUrl(f.parameters.url)) {
-				this._err(`Parameter <url>(${f.parameters.url}) must be a valid url`)
+			} else if (typeof f.parameters.endpoint != 'string' || await !Utils._checkUrl(f.parameters.endpoint)) {
+				this._err(`Parameter <endpoint>(${f.parameters.endpoint}) must be a valid endpoint`)
 
 			// } else if (typeof f.parameters.order != 'number' && typeof f.parameters.order != 'string') {
 			// 	this._err(`Parameter <order>(${f.parameters.order}) must be an number or a string`)
@@ -111,26 +162,7 @@ class TasksManager
 		// || !(await fs.statSync(m.parameters.outputDir)).isDirectory()) {
 		// 	throw this._err(`Parameter <outputDir>(${m.parameters.outputDir}) must be a valid directory path`)
 
-		return func
-	}
-
-	_list_tasks()
-	{
-		return this.tasks.map(t => t.name)
-	}
-
-	_sort_tasks(reverse = false)
-	{
-		// NEED REFACT
-		if (this.tasks.length > 1 && this.options.sort) {
-			const order = m => m.parameters.order
-			this.tasks.sort((a, b) => {
-				if (order(a) == undefined || order(b) == undefined) {
-					this._err(`Disable <sort> option or specify <order> parameter on tasks`)
-				}
-				return order(a) - order(b)
-			})
-		}
+		return task
 	}
 }
 
@@ -138,7 +170,7 @@ class Utils
 {
 	constructor()
 	{
-		// can be instancied is static
+		throw 'cant be instantie directory'
 	}
 
 	static async _merge(data, patch)
@@ -202,4 +234,4 @@ class Monitor
 	// }
 }
 
-export { Abstract, Task, TasksManager, Utils, Monitor }
+export { Abstract, defaultOptions, Task, TasksManager, Utils, Monitor }
