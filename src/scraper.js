@@ -14,10 +14,11 @@ export default class Scraper extends Abstract
 	{	
 		super(defaultOptions)
 
-		this.opt._apply(options)
+		this.options._apply(options)
 		this.navContext = null
 		this.navInstance = null
 
+		Object.seal(this)
 		return this
 	}
 
@@ -44,7 +45,7 @@ export default class Scraper extends Abstract
 			return this
 		}
 		
-		catch(e) { console.error(e) }
+		catch(e) { this._err(e) }
 	}
 
 	async scrap(options = {})
@@ -55,16 +56,25 @@ export default class Scraper extends Abstract
 			this.navInstance = await this.navContext.newPage()
 
 			const result = {}
+			const tasks = this.getTasks()
 
-			for (const task of this.getTasks())
+			tasks.forEach(t => t._up())
+			// console.log(tasks.state)
+
+			// CAN MAKE AN ALTERNATE SYSTEM WITH CONCURRENCE
+			for (const task of tasks)
 			{
+				task._up()
+				// console.log(task.state)
 				await this.navInstance.goto(task.endpoint)
 				result[task.name] = await task.run(this.navInstance)
+
+				task._up()
 			}
 
 			await this.navContext.close()
 
-			return !this.opt.rawResult 
+			return !this.options.rawResult 
 				? {v: result, l: 0 }
 				: result
 
@@ -79,7 +89,7 @@ export default class Scraper extends Abstract
 			// 	? await script.dataTransform(script.run(this.navInstance))
 			// 	: await script.run(this.navInstance)
 
-			// 	if (this.opt.merge) {
+			// 	if (this.options.merge) {
 
 			// 		response.v = await this._merge(response.v, scraped)
 
@@ -104,12 +114,12 @@ export default class Scraper extends Abstract
 			// 	// await this._write(`test.json`, response)
 			// }
 
-			// if (this.opt.downloads.length > 0) {
+			// if (this.options.downloads.length > 0) {
 			// 	await this._getResources(response)
 			// }
 		}
 		
-		catch(e) { console.error(e) }
+		catch(e) { this._err(e) }
 	}
 
 	async _getResources(response)
@@ -117,8 +127,8 @@ export default class Scraper extends Abstract
 		let links = []
 
 		Object.values(response.v).forEach(v => {
-			this.opt.downloads.forEach(s => {
-				let path = Utils._walkObj(v, s.split(this.opt.dlSeparator))
+			this.options.downloads.forEach(s => {
+				let path = Utils._walkObj(v, s.split(this.options.dlSeparator))
 				typeof path == 'string' ? links.push(path) : null
 			})
 		})

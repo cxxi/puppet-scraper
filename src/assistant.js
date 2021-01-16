@@ -26,6 +26,6 @@ export default class Assistant extends Abstract
 
 	async getUI()
 	{
-		return console.log("> Cli is not implemented yet\n")
+		this._err("> Cli is not implemented yet\n")
 	}
 }

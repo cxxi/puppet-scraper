@@ -16,14 +16,14 @@ class Abstract
 	constructor(options)
 	{
 		if (this.constructor.name === Abstract.constructor.name) {
-			throw new TypeError(`Abstract class "${Abstract.constructor.name}" cannot be instantiated directly`)
+			throw `Abstract class "${Abstract.constructor.name}" cannot be instantiated directly`
 		}
 
 		this.rootPath = import.meta.url.match(/^file:\/\/(.*puppet-scraper\/)/)[1]
 
-		this.opt = options
-		this.opt._apply = o => {
-			this.opt = Utils._deepAssign(this.opt, o)
+		this.options = options
+		this.options._apply = opt => {
+			this.options = Utils._deepAssign(this.options, opt)
 		}
 
 		this.tasksManager = new TasksManager()
@@ -32,11 +32,11 @@ class Abstract
 	async _loadScript(target)
 	{
 		if (!target.startsWith('/')) {
-			this._err(`Invalid path, should be absolute (${target})`)
+			throw `Invalid path, should be absolute (${target})`
 		}
 
 		if (await !fs.existsSync(target)) {
-			this._err(`Method mount received an invalid path (${target})`)
+			throw `Method mount received an invalid path (${target})`
 		}
 
 		if ((fs.statSync(target)).isDirectory()) {
@@ -49,6 +49,11 @@ class Abstract
 			return this.tasksManager.build(await import(target))
 		}
 	}
+
+	_err(err)
+	{
+		Monitor.renderError(err)
+	}
 }
 
 class Task
@@ -56,52 +61,110 @@ class Task
 	constructor(name = false)
 	{
 		if (name.constructor !== String || name.length < 1) {
-			throw new Error('Initialization failed') 
+			throw 'Initialization failed'
 		}
-		this.name = name
-		return this
+
+		this.parameters = {}
+		this.endpoint = null
+		this.name = null
+		
+		Object.defineProperty(this, 'name', {
+			configurable: false,
+			writable: false,
+			value: name
+		})
+
+		function* _lifecycle(s = false)
+		{
+			let i = 0; while(true)
+			{
+				i = i === 6 ? 2 : i
+				i = s.constructor === Number ? s : i
+				yield i++
+			}
+		}
+
+		const lifecycle = _lifecycle()
+		this.state = null
+
+		Object.defineProperty(this, '_up', {
+			enumerable: false,
+			configurable: false,
+			writable: false,
+			value: _ => {
+
+				switch(lifecycle.next().value)
+				{
+					case 0: this.state = 'notdefined';break
+					case 1: this.state = 'defined'   ;break
+					case 2: this.state = 'ready'     ;break
+					case 3: this.state = 'pending'   ;break
+					case 4: this.state = 'running'   ;break
+					case 5: this.state = 'finished'  ;break
+				}
+
+				return this
+			}
+		})
+
+		this.run = async _ => null
+		this.result = { data: null, time: 0, length: 0, errors: [] }
+
+		Object.seal(this)
+		return this._up()
 	}
 
-	define(params = {}, func)
+	define(parameters = {}, run)
 	{
-		if (params.endpoint === undefined || !Utils._checkUrl(params.endpoint)) {
-			throw new Error('Invalid endpoint parameters')
+		if (parameters.endpoint.constructor !== String) {
+			throw 'Invalid <parameters.endpoint>, must be a valid URL'
 		}
-		this.endpoint = params.endpoint
-		this.run = func
-		this.parameters = params
-		// Object.seal(this)
-		return this
+
+		Object.defineProperty(this, 'endpoint', {
+			configurable: false,
+			writable: false,
+			value: parameters.endpoint
+		})
+
+		delete parameters.endpoint
+
+		if (parameters.constructor !== Object) {
+			throw 'Invalid <parameters> argument must be an Object'
+		}
+
+		this.parameters = parameters
+
+		if (run.constructor !== (async _ => {}).constructor) {
+			throw 'Invalid <run> argument, must be an Async Function'
+		}
+
+		Object.defineProperty(this, 'run', {
+			configurable: false,
+			writable: false,
+			value: run
+		})
+
+		return this._up()
 	}
-
-
-	// set name(n) {
-	// 	console.log(this)
-	// 	if (!this.hasOwnProperty('name')){
-	// 		this.name = n
-	// 		// Object.defineProperty(this, 'name', {value: n })
-	// 	}
-	// }
 }
 
 class TasksManager
 {
 	constructor()
 	{
-		this.tasks = []
+		this.queue = []
 		// make weakmap
-		this.sortable  = false
 		// make updatable or not ?
 	}
 
 	getTask(name = false)
 	{
-		name ? this.tasks.filter(t => t.name == name)[0] : this.tasks 
+		return name ? this.queue.filter(t => t.name == name)[0] : this.queue 
 	}
 
 	list()
 	{
-		return this.tasks.map(t => t.name)
+		return this.queue.map(t => t.name)
 	}
 
 	build(script)
@@ -112,11 +175,11 @@ class TasksManager
 	sort(reverse = false)
 	{
 		// NEED REFACT
-		if (this.tasks.length > 1 && this.options.sort) {
+		if (this.queue.length > 1 && this.options.sort) {
 			const order = m => m.parameters.order
-			this.tasks.sort((a, b) => {
+			this.queue.sort((a, b) => {
 				if (order(a) == undefined || order(b) == undefined) {
-					this._err(`Disable <sort> option or specify <order> parameter on tasks`)
+					throw `Disable <sort> option or specify <order> parameter on tasks`
 				}
 				return order(a) - order(b)
 			})
@@ -128,9 +191,10 @@ class TasksManager
 		for (let task of tasks)
 		{
 			task = await this.check(task)
-			this.tasks.push(task)
-			console.log(`> Enqueue Task ${task.name} (${this.tasks.length} tasks in queue)\n`)
-			if (this.sortable) this.sort()
+			
+			this.queue.push(task._up())
+			console.log(`> [Scraper] Enqueue Task(${this.queue.length}) - ${task.name}`)
+			// if (false) this.sort()
 		}
 	}
 		
@@ -140,19 +204,19 @@ class TasksManager
 		{
 			if (typeof f.name != 'string' || f.name.length < 1) {
 				// add verif uppercase + lowercase + _ + numeric
-				this._err(`Script must export a constant "name" (String)`)
+				throw `Script must export a constant "name" (String)`
 
 			}else if (typeof f.parameters != 'object') {
-				this._err(`Script must export a constant "parameters" (Object)`)
+				throw `Script must export a constant "parameters" (Object)`
 
-			} else if (typeof f.parameters.endpoint != 'string' || await !Utils._checkUrl(f.parameters.endpoint)) {
-				this._err(`Parameter <endpoint>(${f.parameters.endpoint}) must be a valid endpoint`)
+			} else if (typeof f.endpoint != 'string' || await !Utils._checkUrl(f.endpoint)) {
+				throw `Parameter <endpoint>(${f.endpoint}) must be a valid endpoint`
 
 			// } else if (typeof f.parameters.order != 'number' && typeof f.parameters.order != 'string') {
-			// 	this._err(`Parameter <order>(${f.parameters.order}) must be an number or a string`)
+			// 	throw `Parameter <order>(${f.parameters.order}) must be an number or a string`
 			
 			} else if (typeof f.run != 'function') {
-				this._err(`Script must export a function "run"`)
+				throw `Script must export a function "run"`
 			}
 		}
 
@@ -160,7 +224,7 @@ class TasksManager
 		//
 		// } else if (typeof m.parameters.outputDir != 'string' 
 		// || !(await fs.statSync(m.parameters.outputDir)).isDirectory()) {
-		// 	throw this._err(`Parameter <outputDir>(${m.parameters.outputDir}) must be a valid directory path`)
+		// 	throw throw `Parameter <outputDir>(${m.parameters.outputDir}) must be a valid directory path`
 
 		return task
 	}
@@ -178,7 +242,7 @@ class Utils
 		data = Object.keys(data).length > 0 ? data : new (patch.constructor)()
 
 		if (data.constructor !== patch.constructor) {
-			throw new Error(`Invalid patch Constructor (${typeof patch.constructor})`)
+			throw `Invalid patch Constructor (${typeof patch.constructor})`
 		}
 		
 		switch(patch.constructor)
@@ -217,21 +281,16 @@ class Utils
 	{
 		try { return Boolean(new URL(url)) } catch(e) { return false }
 	}
-
-	static _err(e, code = false)
-	{ 
-		const color = "\x1b[31m"
-		const head = code ? `[ERROR] #${code}` : `[ERROR]`
-		throw new Error(`${color}${head}\n> ${e}\n`)
-	}
 }
 
 class Monitor
 {
-
-	// if (e instanceof EvalError)  {
-
-	// }
+	static renderError(e, code = false)
+	{
+		const color = "\x1b[31m"
+		const head = code ? `[ERROR] #${code}` : `[ERROR]`
+		console.error(new Error(`${color}${head}\n> ${e}\n`))
+	}
 }
 
 export { Abstract, defaultOptions, Task, TasksManager, Utils, Monitor }
