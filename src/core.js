@@ -1,13 +1,16 @@
 'use strict'
 
-import Task from './task.js'
-import Utils from './utils.js'
+import fs from 'fs'
 
 
-export default class Core 
+class Abstract
 {
 	constructor(options)
 	{
+		if (this.constructor.name === Abstract.constructor.name) {
+			throw new TypeError(`Abstract class "${Abstract.constructor.name}" cannot be instantiated directly`)
+		}
+
 		this.rootPath = import.meta.url.match(/^file:\/\/(.*puppet-scraper\/)/)[1]
 
 		this.opt = options
@@ -17,8 +20,42 @@ export default class Core
 
 		this.tasks = []
 	}
+}
 
-	async _load_task(target)
+class Task
+{
+	constructor(name = false)
+	{
+		if (name.constructor !== String || name.length < 1) {
+			throw new Error('Initialization failed') 
+		}
+		this.name = name
+	}
+
+	define(func, params = {})
+	{
+		if (params.url === undefined || !Utils._checkUrl(params.url)) {
+			throw new Error('Invalid url parameters')
+		}
+		this.url = params.url
+		this.run = func
+		this.parameters = params
+		// Object.seal(this)
+	}
+
+
+	// set name(n) {
+	// 	console.log(this)
+	// 	if (!this.hasOwnProperty('name')){
+	// 		this.name = n
+	// 		// Object.defineProperty(this, 'name', {value: n })
+	// 	}
+	// }
+}
+
+class TasksManager
+{
+	async _load_scripts(target)
 	{
 		if (!target.startsWith('/')) {
 			this._err(`Invalid path, should be absolute (${target})`)
@@ -95,12 +132,74 @@ export default class Core
 			})
 		}
 	}
+}
 
-	_err(e, code = false)
+class Utils
+{
+	constructor()
+	{
+		// can be instancied is static
+	}
+
+	static async _merge(data, patch)
+	{
+		data = Object.keys(data).length > 0 ? data : new (patch.constructor)()
+
+		if (data.constructor !== patch.constructor) {
+			throw new Error(`Invalid patch Constructor (${typeof patch.constructor})`)
+		}
+		
+		switch(patch.constructor)
+		{
+			case Array  : data = [].concat(data, patch); break
+			case Object : data = Utils._deepAssign(data, patch); break
+		}
+
+		return data
+	}
+
+	static _deepAssign(target, source)
+	{
+		for (const k of Object.keys(source)) 
+		{
+			if (source[k] instanceof Object && k in target) {
+				Object.assign(source[k], Utils._deepAssign(target[k], source[k]))
+			}
+		}
+		Object.assign(target || {}, source)
+		return target
+	}
+
+	static _walkObj(obj, keys)
+	{
+		let i = 0
+		while(obj)
+		{
+			obj = Object.keys(obj).includes(keys[i]) ? obj[keys[i]] : false
+			if (i == keys.length-1) return obj
+			i++
+		}
+	}
+
+	static async _checkUrl(url)
+	{
+		try { return Boolean(new URL(url)) } catch(e) { return false }
+	}
+
+	static _err(e, code = false)
 	{ 
 		const color = "\x1b[31m"
 		const head = code ? `[ERROR] #${code}` : `[ERROR]`
 		throw new Error(`${color}${head}\n> ${e}\n`)
 	}
-
 }
+
+class Monitor
+{
+
+	// if (e instanceof EvalError)  {
+
+	// }
+}
+
+export { Abstract, Task, TasksManager, Utils, Monitor }

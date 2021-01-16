@@ -2,8 +2,7 @@
 
 import inquirer from 'inquirer'
 
-import { defaultOptions } from './index.js'
-import Core from './core.js'
+import { Abstract, defaultOptions } from './core.js'
 
 // 	(CLI)
 // 	config
@@ -11,7 +10,7 @@ import Core from './core.js'
 // process.argv.length == 4
 
 
-export default class Assistant extends Core
+export default class Assistant extends Abstract
 {
 	constructor(argv)
 	{ 

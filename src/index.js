@@ -2,16 +2,7 @@
 
 import Assistant from './assistant.js'
 import Scraper from './scraper.js'
-import Task from './task.js'
-
-
-const defaultOptions = {
-	rawResult: false, 
-	merge: false,
-	sort: false,
-	downloads: [],
-	dlSeparator: '>'
-}
+import { Task } from './core.js'
 
 const Cli = async argv => {
 
@@ -34,5 +25,5 @@ const Cli = async argv => {
 	}
 }
 
-export { Cli, Task, defaultOptions }
+export { Cli, Task }
 export default Scraper

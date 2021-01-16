@@ -5,12 +5,10 @@ import https     from 'https'
 import http      from 'http'
 import fs        from 'fs'
 
-import { defaultOptions } from './index.js'
-import Core from './core.js'
-import Utils from './utils.js'
+import { Abstract, defaultOptions, Utils } from './core.js'
 
 
-export default class Scraper extends Core
+export default class Scraper extends Abstract
 {
 	constructor(options = {})
 	{	
@@ -32,7 +30,7 @@ export default class Scraper extends Core
 			for (const t of Array.isArray(targets) ? targets : [targets])
 			{
 				let s = t.constructor === String
-					? await this._load_task(t)
+					? await this._load_scripts(t)
 					: t
 
 				tasks.push(await this._check_task(s))
