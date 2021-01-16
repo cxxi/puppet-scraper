@@ -1,0 +1,56 @@
+{
+  "name": "puppet-scraper",
+  "version": "1.0.0",
+  "description": "Scrap using your custom scripts with merge, download, callback and more functionality (based on puppeteer)",
+  "author": "Louis-Antoine Lumet",
+  "license": "MIT",
+  "repository": "cxxi/puppet-scraper",
+  "type": "module",
+  "main": "src",
+  "engines": {
+    "node": ">=13.2"
+  },
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "start": "bin/scraper-cli.js"
+  },
+  "bin": {
+    "scraper-cli": "bin/scraper-cli.js"
+  },
+  "files": [
+    "src",
+    "index.js"
+  ],
+  "keywords": [
+    "scrap",
+    "scraper",
+    "scraping",
+    "crawl",
+    "crawler",
+    "crawling",
+    "puppet",
+    "puppeteer",
+    "extract",
+    "parse",
+    "data",
+    "url",
+    "download",
+    "grab",
+    "get",
+    "cli"
+  ],
+  "dependencies": {
+    "inquirer": "^7.3.3",
+    "puppeteer": "^5.5.0"
+  },
+  "devDependencies": {
+    "babel-jest": "^26.6.3",
+    "jest": "^26.6.3"
+  },
+  "jest": {
+    "verbose": true,
+    "clearMocks": true,
+    "testEnvironment": "node",
+    "transform": {}
+  }
+}
