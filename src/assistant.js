@@ -2,6 +2,7 @@
 
 import inquirer from 'inquirer'
 
+import { defaultOptions } from './index.js'
 import Core from './core.js'
 
 // 	(CLI)
@@ -14,7 +15,7 @@ export default class Assistant extends Core
 {
 	constructor(argv)
 	{ 
-		super() 
+		super(defaultOptions)
 
 		// ? (async arg => await Scraper.scrap(arg))(process.argv.slice(2, 4))
 		// : await Scraper.ui() 

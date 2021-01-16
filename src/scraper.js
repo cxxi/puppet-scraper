@@ -5,53 +5,40 @@ import https     from 'https'
 import http      from 'http'
 import fs        from 'fs'
 
+import { defaultOptions } from './index.js'
 import Core from './core.js'
+import Utils from './utils.js'
 
 
 export default class Scraper extends Core
 {
-	constructor()
+	constructor(options = {})
 	{	
-		super()
+		super(defaultOptions)
 
-		this.browser = null
-		this.page = null
+		this.opt._apply(options)
+		this.navContext = null
+		this.navInstance = null
 
 		return this
 	}
 
-	async mount(script = false)
+	async mount(targets)
 	{
 		try
 		{
-			if (typeof script === 'string') {
+			const tasks = []
 
-				if (!script.startsWith('/')) {
-					this._err(`Invalid path, should be absolute (${script})`)
+			for (const t of Array.isArray(targets) ? targets : [targets])
+			{
+				let s = t.constructor === String
+					? await this._load_task(t)
+					: t
 
-				} else if ((fs.statSync(script)).isDirectory() === (fs.statSync(script)).isFile()) {
-					this._err(`Method mount received an invalid path (${script})`)
-
-				} else if ((fs.statSync(script)).isDirectory()) {
-					this.scripts = this.scripts.concat(await Promise.all(
-						fs.readdirSync(script).map(async s => await import(`${script}/${s}`))
-					))
-
-				} else if ((fs.statSync(script)).isFile()) {
-					this.scripts = this.scripts.concat([ await import(script) ])
-				}
-			
-			} else if (typeof script == 'object') {
-
-				this.scripts = !Array.isArray(script)
-					? this.scripts.concat([this._buildScriptModule(script)])
-					: this.scripts.concat(script.map(s => this._buildScriptModule(s)))
-
-			} else {
-
-				this._err(`Invalid argument, should be an absolute path, a function or an array of functions.`)
+				tasks.push(await this._check_task(s))
 			}
 
+			this.tasks = tasks.flat()
 			return this
 		}
 		
@@ -61,34 +48,38 @@ export default class Scraper extends Core
 	async scrap(options = {})
 	{
 		try
-		{
-			this.options._mount(options)
+		{			
+			this.navContext = await puppeteer.launch()
+			this.navInstance = await this.navContext.newPage()
 
-			if (this.scripts.length > 1 && this.options.sort) {
-				const order = m => m.parameters.order
-				this.scripts.sort((a, b) => {
-					if (order(a) == undefined || order(b) == undefined) {
-						this._err(`Disable <sort> option or specify <order> parameter on scripts`)
-					}
-					return order(a) - order(b)
-				})
+			const result = {}
+
+			if (this.opt.sort) this._sort_tasks()
+
+			for (const task of this.tasks)
+			{
+				await this.navInstance.goto(task.parameters.url)
+				result[task.name] = await task.run(this.navInstance)
 			}
-			
-			this.browser = await puppeteer.launch()
-			this.page = await this.browser.newPage()
+
+			await this.navContext.close()
+
+			return !this.opt.rawResult 
+				? {v: result, l: 0 }
+				: result
 
 			// for (const script of this.scripts)
 			// {
 			// 	const url = script.parameters.url
 			// 	const response = { v: {}, l: 0, t: url, e: [] }
 				
-			// 	await this.page.goto(url)
+			// 	await this.navInstance.goto(url)
 
 			// 	const scraped = script.dataTransform
-			// 	? await script.dataTransform(script.run(this.page))
-			// 	: await script.run(this.page)
+			// 	? await script.dataTransform(script.run(this.navInstance))
+			// 	: await script.run(this.navInstance)
 
-			// 	if (this.options.merge) {
+			// 	if (this.opt.merge) {
 
 			// 		response.v = await this._merge(response.v, scraped)
 
@@ -113,29 +104,12 @@ export default class Scraper extends Core
 			// 	// await this._write(`test.json`, response)
 			// }
 
-			// if (this.options.downloads.length > 0) {
+			// if (this.opt.downloads.length > 0) {
 			// 	await this._getResources(response)
 			// }
-
-			const response = {}
-
-			for (const script of this.scripts)
-			{
-				await this.page.goto(script.parameters.url)
-				response[script.name] = await script.run(this.page)
-			}
-
-			await this.browser.close()
-			
-			return response
 		}
 		
 		catch(e) { console.error(e) }
-	}
-
-	_buildScriptModule(scriptFunc)
-	{
-		// scriptFunc
 	}
 
 	async _getResources(response)
@@ -143,8 +117,8 @@ export default class Scraper extends Core
 		let links = []
 
 		Object.values(response.v).forEach(v => {
-			this.options.downloads.forEach(s => {
-				let path = Core._walkObj(v, s.split(this.options.dlSeparator))
+			this.opt.downloads.forEach(s => {
+				let path = Utils._walkObj(v, s.split(this.opt.dlSeparator))
 				typeof path == 'string' ? links.push(path) : null
 			})
 		})
@@ -153,7 +127,7 @@ export default class Scraper extends Core
 			if (!link.startsWith('http://') && !link.startsWith('https://')) {
 				link = new URL(link, response.t).href
 				// do try catch for valid first before use to download
-				// Core._checkUrl()
+				// Utils._checkUrl()
 			}
 			return link
 		})
@@ -171,9 +145,23 @@ export default class Scraper extends Core
 		// const dataYml = await yaml.stringify(data)
 		// await fs.writeFileSync(`${this.path.dest}/items.yml`, dataYml)
 	}
-	
+
 	//  async _write(filename, response)
 	//  {
 	// 		await fs.writeFileSync(`${script.parameters.outputDir}/${filename}`, JSON.stringify(response, null, 2))
 	//  }
 }
+
+
+// function * iterableObj(target) 
+// {
+// 	yield 'This'
+// 	yield 'is'
+// 	yield 'iterable.'
+// }
+// for (const val of iterableObj()) {
+//   console.log(val);
+// }
+// This
+// is 
+// iterable.

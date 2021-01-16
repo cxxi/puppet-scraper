@@ -1,17 +1,21 @@
 'use strict'
 
-import {jest} from '@jest/globals'
+import { jest } from '@jest/globals'
 
-import {Cli}     from '../src/index.js'
-import Core      from '../src/core.js'
-import Scraper   from '../src/scraper.js'
-import Assistant from '../src/assistant.js'
+import { Cli, Task } from '../src/index.js'
+import Core          from '../src/core.js'
+import Scraper       from '../src/scraper.js'
+import Assistant     from '../src/assistant.js'
 
 
 describe('Check Integrity of sources', function(){
 
 	it('Cli should return a function', function(){
 		expect(Cli.constructor).toBe(Object.getPrototypeOf(async _ => {}).constructor)
+	})
+
+	it('Task should return an instance of Task class', function(){
+		expect((new Task()).constructor).toBe(Task)
 	})
 
 	it('Core should return an instance of Core class', function(){

@@ -1,92 +1,71 @@
 'use strict'
 
+import Task from './task.js'
+import Utils from './utils.js'
+
+
 export default class Core 
 {
-	constructor()
+	constructor(options)
 	{
-		this.options = {
-			rawResult: false, 
-			merge: false,
-			sort: false,
-			downloads: [],
-			dlSeparator: '>',
-			// transform: true,
-			// callback: true
+		this.rootPath = import.meta.url.match(/^file:\/\/(.*puppet-scraper\/)/)[1]
+
+		this.opt = options
+		this.opt._apply = o => {
+			this.opt = Utils._deepAssign(this.opt, o)
 		}
 
-		this.options._mount = o => { 
-			this.options = Core._deepAssign(this.options, o) 
-		}
-
-		this.scripts = []
-
-		// const absolutePath = import.meta.url.match(/^file:\/\/(.*puppet-scraper\/)/)[1]
+		this.tasks = []
 	}
 
-	async _merge(data, patch)
+	async _load_task(target)
 	{
-		data = Object.keys(data).length > 0 ? data : new (patch.constructor)()
-
-		if (data.constructor !== patch.constructor) {
-			this._err(`Invalid patch Constructor (${typeof patch.constructor})`)
+		if (!target.startsWith('/')) {
+			this._err(`Invalid path, should be absolute (${target})`)
 		}
+
+		if (await !fs.existsSync(target)) {
+			this._err(`Method mount received an invalid path (${target})`)
+		}
+
+		if ((fs.statSync(target)).isDirectory()) {
+			return await Promise.all(fs.readdirSync(target).map(async s => {
+				return this._build_task(await import(`${target}/${s}`))
+			}))
+		} 
+
+		if ((fs.statSync(target)).isFile()) {
+			return this._build_task(await import(target))
+		}
+	}
+
+	_build_task(script)
+	{
+		const task = new Task(script.name)
+		task.define(script.run, script.parameters)
+		return task
+	}
 		
-		switch(patch.constructor)
-		{
-			case Array  : data = [].concat(data, patch); break
-			case Object : data = Core._deepAssign(data, patch); break
-		}
-
-		return data
-	}
-
-	static _deepAssign(target, source)
+	async _check_task(func)
 	{
-		for (const k of Object.keys(source)) 
+		for (const f of Array.isArray(func) ? func : [func])
 		{
-			if (source[k] instanceof Object && k in target) {
-				Object.assign(source[k], Core._deepAssign(target[k], source[k]))
+			if (typeof f.name != 'string' || f.name.length < 1) {
+				// add verif uppercase + lowercase + _ + numeric
+				this._err(`Script must export a constant "name" (String)`)
+
+			}else if (typeof f.parameters != 'object') {
+				this._err(`Script must export a constant "parameters" (Object)`)
+
+			} else if (typeof f.parameters.url != 'string' || await !Utils._checkUrl(f.parameters.url)) {
+				this._err(`Parameter <url>(${f.parameters.url}) must be a valid url`)
+
+			// } else if (typeof f.parameters.order != 'number' && typeof f.parameters.order != 'string') {
+			// 	this._err(`Parameter <order>(${f.parameters.order}) must be an number or a string`)
+			
+			} else if (typeof f.run != 'function') {
+				this._err(`Script must export a function "run"`)
 			}
-		}
-		Object.assign(target || {}, source)
-		return target
-	}
-
-	static _walkObj(obj, keys)
-	{
-		let i = 0
-		while(obj)
-		{
-			obj = Object.keys(obj).includes(keys[i]) ? obj[keys[i]] : false
-			if (i == keys.length-1) return obj
-			i++
-		}
-	}
-
-	static async _checkUrl(url)
-	{
-		try { return Boolean(new URL(url)) } catch(e) { return false }
-	}
-
-	async _checkScript(m)
-	{
-		// IMPLEMENTE ADVANCED ERROR
-
-		if (typeof m.name != 'string' || m.name.length < 1) {
-			// add verif camelcase
-			this._err(`Script must export a constant "name" (String)`)
-
-		}else if (typeof m.parameters != 'object') {
-			this._err(`Script must export a constant "parameters" (Object)`)
-
-		} else if (typeof m.parameters.url != 'string' || await !Core._checkUrl(m.parameters.url)) {
-			this._err(`Parameter <url>(${m.parameters.url}) must be a valid url`)
-
-		} else if (typeof m.parameters.order != 'number' && typeof m.parameters.order != 'string') {
-			this._err(`Parameter <order>(${m.parameters.order}) must be an number or a string`)
-		
-		} else if (typeof m.run != 'function') {
-			this._err(`Script must export a function "run"`)
 		}
 
 		// Need refect for support to state with param and without, (when callback can without)
@@ -95,7 +74,26 @@ export default class Core
 		// || !(await fs.statSync(m.parameters.outputDir)).isDirectory()) {
 		// 	throw this._err(`Parameter <outputDir>(${m.parameters.outputDir}) must be a valid directory path`)
 
-		return m
+		return func
+	}
+
+	_list_tasks()
+	{
+		return this.tasks.map(t => t.name)
+	}
+
+	_sort_tasks(reverse = false)
+	{
+		// NEED REFACT
+		if (this.tasks.length > 1 && this.options.sort) {
+			const order = m => m.parameters.order
+			this.tasks.sort((a, b) => {
+				if (order(a) == undefined || order(b) == undefined) {
+					this._err(`Disable <sort> option or specify <order> parameter on tasks`)
+				}
+				return order(a) - order(b)
+			})
+		}
 	}
 
 	_err(e, code = false)
