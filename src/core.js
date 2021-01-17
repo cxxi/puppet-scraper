@@ -1,13 +1,14 @@
 'use strict'
 
-import fs from 'fs'
+import readline from 'readline'
+import yaml     from 'yaml'
+import fs       from 'fs'
 
 
 const defaultOptions = {
 	rawResult: false, 
 	merge: false,
 	sort: false,
-	downloads: [],
 	dlSeparator: '>'
 }
 
@@ -41,6 +42,8 @@ class Abstract
 		this.options._apply(options)
 		this.tasksManager = new TasksManager(this.options)
 		// make setter for "sort" to update taskManager at same time.
+		// need bridge to update option of taskManager in same 
+		// time user update option on scraper
 	}
 
 	async _loadScript(target)
@@ -259,27 +262,26 @@ class TasksManager
 	async getResult(name = false)
 	{
 		let unfinished = this.queue.filter(t => t.state != 'finished')
-		let result = {}
+		let result = { v: {}, l: 0 }
 
 		if (unfinished.length > 0){
 			throw `Execution is not yet finished, there are ${unfinished.length} pending tasks`
 		}
 
-		// maybe do in scraper ?
-		// if (this.shouldMerge) {
-		// 	let i = 0
-		// 	while(i<this.queue.length)
-		// 	{
-		// 		await Utils.merge(this.queue[0+i].result.data, this.queue[1+i].result.data)
-		// 		console.log(g)
-		// 		i++
-		// 	}
-		// }
+		if (this.shouldMerge) {
 
-		// result.v = ''
-		// result.v = ''
+			result.v = this.queue[0].result.data
+			for (let i=1;i<this.queue.length;i++)
+			{
+				result.v = await Utils.merge(result.v, this.queue[i].result.data)
+			}
 
-		return this.queue // TMP return result
+		} else {
+
+			this.queue.forEach(task => result.v[task.name] = task.result.data)
+		}
+
+		return result
 	}
 }
 
@@ -330,9 +332,24 @@ class Utils
 		}
 	}
 
-	static async checkUrl(url)
+	static async checkUrl(url, returnUrl = false)
 	{
-		try { return Boolean(new URL(url)) } catch(e) { return false }
+		const _check = url => { try { return Boolean(new URL(url)) } catch(e) { return false } }
+		return returnUrl && _check(url) ? url : _check(url)
+	}
+
+	static async streamSetup(filename)
+	{
+		let dir = filename.split('/').slice(0, filename.split('/').length-1).join('/')
+		await fs.existsSync(dir) || await fs.mkdirSync(dir, { recursive: true })
+		return fs.createWriteStream(filename)
+	}
+
+	static async writeFile(filename, response)
+	{
+		// await fs.writeFileSync(`${script.parameters.outputDir}/${filename}`, JSON.stringify(response, null, 2))
+	    // const dataYml = await yaml.stringify(data)
+	    // await fs.writeFileSync(`${this.path.dest}/items.yml`, dataYml)
 	}
 }
 
@@ -346,6 +363,38 @@ class Monitor
 		process.exit(1)
 	}
 }
+
+// class LoadingBar 
+// {
+//     constructor(size) 
+//     {
+//         this.size = size
+//         this.cursor = 0
+//         this.timer = null
+//     }
+
+//     start() 
+//     {
+//         process.stdout.write("\x1B[?25l")
+//         process.stdout.write("[")
+//         for (let i = 0; i < this.size; i++) {
+//             process.stdout.write("-")
+//         }
+//         process.stdout.write("]")
+//         this.cursor = 1
+//         readline.cursorTo(process.stdout, this.cursor, 0)
+//         this.timer = setInterval( _ => {
+//             process.stdout.write("=")
+//             this.cursor++
+//             if (this.cursor >= this.size) {
+//                 clearTimeout(this.timer)
+//                 process.stdout.write("\x1B[?25h")
+//             }
+//         }, 100)
+//     }
+// }
+// const ld = new LoadingBar(50)
+// ld.start()
 
 export { Abstract, defaultOptions, Task, TasksManager, Utils, Monitor }
 

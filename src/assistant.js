@@ -13,7 +13,7 @@ import { Abstract, defaultOptions } from './core.js'
 export default class Assistant extends Abstract
 {
 	constructor(argv)
-	{ 
+	{
 		super(defaultOptions)
 
 		// ? (async arg => await Scraper.scrap(arg))(process.argv.slice(2, 4))

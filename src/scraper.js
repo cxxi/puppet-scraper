@@ -3,7 +3,6 @@
 import puppeteer from 'puppeteer'
 import https     from 'https'
 import http      from 'http'
-import fs        from 'fs'
 
 import { Abstract, defaultOptions, Utils } from './core.js'
 
@@ -73,74 +72,83 @@ export default class Scraper extends Abstract
 				let timeleft = Date.now()
 				await this.navInstance.goto(task.endpoint)
 				let data = await task.run(this.navInstance)
-				timeleft = Date.now()-timeleft
+
+				let downloads = task.parameters.downloads
+				if (Array.isArray(downloads) && downloads.length > 0) {
+					task.result.files = await this._getResources(task, data)
+				}
 
 				task.result = Object.assign({}, task.result, {
-					data: data,
-					length: data.length,
-					timeleft: timeleft
+					length: (Array.isArray(data) ? data : Object.keys(data)).length,
+					timeleft: `${(Date.now()-timeleft)/1000}s`,
+					Milileft: Date.now()-timeleft,
+					data: data
 				})
 
 				task._up()
 			}
 
 			await this.navContext.close()
+			// 	if (task.callback) task.callback(result)
 			return await this.getResult()
-
-			// if (this.options.merge) {
-			// 	response.v = await this._merge(response.v, scraped)
-			// } else {
-			// 	response.v[script.name] = scraped
-			// 	if (script.callback) script.callback(scraped)
-			// 	const dl = script.parameters.downloads
-			// 	if (Array.isArray(dl) && dl.length > 0) {
-			// 		this._getResources(response)
-			// 		// check double download
-			// 	}
-			// }
-			// await this._persist(url, data, task.dataTransform)
-			// await this._write(`test.json`, response)
+			// return await Utils.writeFile(`test.json`, response)
 		}
 		
 		catch(e) { this._err(e) }
 	}
 
-	async _getResources(response)
+	async _getResources(task, data)
 	{
-		let links = []
+		const resources = []
+		const links = []
 
-		Object.values(response.v).forEach(v => {
-			this.options.downloads.forEach(s => {
+		if (task.parameters.outputDir.constructor !== String) {
+			throw `Task parameter <outputDir> must be a String` 
+			// finaly if have not parameter outputDir can return base64 ?
+		}
+
+		if (task.parameters.downloads.constructor !== Array) {
+			throw `Task parameter <downloads> must be an Array of String` 
+			// finaly it's can be equal to true 
+			// (for key to download at root of object)
+		}
+
+		Object.values(data).forEach(v => {
+			task.parameters.downloads.forEach(s => {
 				let path = Utils.walkObj(v, s.split(this.options.dlSeparator))
 				typeof path == 'string' ? links.push(path) : null
 			})
 		})
+		
+		for (let link of [...new Set(links)])
+		{
+			let url = !link.startsWith('http://') && !link.startsWith('https://')
+				? await Utils.checkUrl(new URL(link, task.endpoint).href, true)
+				: await Utils.checkUrl(new URL(link).href, true)
+			
+			let filename = task.parameters.outputDir + new URL(url).pathname
+			let file = await Utils.streamSetup(filename)
 
-		links = links.map(link => {
-			if (!link.startsWith('http://') && !link.startsWith('https://')) {
-				link = new URL(link, response.t).href
-				// do try catch for valid first before use to download
-				// Utils._checkUrl()
+			resources.push(filename)
+			
+			switch(new URL(url).protocol)
+			{
+				case 'https:': {
+					https.get(url, response => {
+					    response.pipe(file)
+					    file.on('finish', _ => file.close())
+					}); break
+				}
+
+				case 'http:': {
+					http.get(url, response => {
+					    response.pipe(file)
+					    file.on('finish', _ => file.close())
+					}); break
+				}
 			}
-			return link
-		})
+		}
 
-		console.log(links)
-
-		// let source = url.slice(0,url.length-1)+icon
-		// let filename = this.path.dest+icon
-		// let dir = filename.split('/').slice(0, filename.split('/').length-1).join('/')
-		// await fs.existsSync(dir) || await fs.mkdirSync(dir, { recursive: true })
-		// let file = fs.createWriteStream(filename)
-		// https.get(source, response => {
-		//     response.pipe(file); file.on('finish', _ => file.close())
-		// })
-		// const dataYml = await yaml.stringify(data)
-		// await fs.writeFileSync(`${this.path.dest}/items.yml`, dataYml)
+		return resources
 	}
-
-	//  async _write(filename, response)
-	//  {
-	// 		await fs.writeFileSync(`${script.parameters.outputDir}/${filename}`, JSON.stringify(response, null, 2))
-	//  }
 }
