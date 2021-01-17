@@ -19,14 +19,28 @@ class Abstract
 			throw `Abstract class "${Abstract.constructor.name}" cannot be instantiated directly`
 		}
 
-		this.rootPath = import.meta.url.match(/^file:\/\/(.*puppet-scraper\/)/)[1]
+		Object.defineProperty(this, 'rootPath', {
+			configurable: false,
+			writable: false,
+			value: import.meta.url.match(/^file:\/\/(.*puppet-scraper\/)/)[1]
+		})
 
 		this.options = options
-		this.options._apply = opt => {
-			this.options = Utils._deepAssign(this.options, opt)
-		}
+		Object.defineProperty(this.options, '_apply', {
+			enumerable: false,
+			configurable: false,
+			writable: false,
+			value: option => {
+				this.options = Utils.deepAssign(this.options, option)
+			}
+		})
+	}
 
-		this.tasksManager = new TasksManager()
+	_initialization(options)
+	{
+		this.options._apply(options)
+		this.tasksManager = new TasksManager(this.options)
+		// make setter for "sort" to update taskManager at same time.
 	}
 
 	async _loadScript(target)
@@ -108,7 +122,7 @@ class Task
 		})
 
 		this.run = async _ => null
-		this.result = { data: null, time: 0, length: 0, errors: [] }
+		this.result = {}
 
 		Object.seal(this)
 		return this._up()
@@ -150,21 +164,28 @@ class Task
 
 class TasksManager
 {
-	constructor()
+	constructor(args = {})
 	{
 		this.queue = []
-		// make weakmap
-		// make updatable or not ?
+		this.shouldSort = false
+		this.shouldMerge = false
+
+		Object.defineProperty(this, 'shouldSort', {
+			enumerable: false,
+			value: args.sort === true
+		})
+
+		Object.defineProperty(this, 'shouldMerge', {
+			enumerable: false,
+			value: args.merge === true
+		})
 	}
 
 	getTask(name = false)
-	{
-		return name ? this.queue.filter(t => t.name == name)[0] : this.queue 
-	}
-
-	list()
-	{
-		return this.queue.map(t => t.name)
+	{	
+		return name 
+			? this.queue.filter(t => t.name == name)[0] 
+			: (this.shouldSort ? this.sortQueue() : this.queue)
 	}
 
 	build(script)
@@ -172,18 +193,23 @@ class TasksManager
 		return (new Task(script.name)).define(script.parameters, script.run)
 	}
 
-	sort(reverse = false)
+	list()
 	{
-		// NEED REFACT
-		if (this.queue.length > 1 && this.options.sort) {
-			const order = m => m.parameters.order
-			this.queue.sort((a, b) => {
-				if (order(a) == undefined || order(b) == undefined) {
-					throw `Disable <sort> option or specify <order> parameter on tasks`
-				}
-				return order(a) - order(b)
-			})
+		return this.shouldSort
+			? this.sortQueue().map(t => t.name)
+			: this.queue.map(t => t.name)
+	}
+
+	sortQueue()
+	{
+		const order = t => t.parameters.order
+
+		if (this.queue.length == 0) throw 'The queue is empty'
+		if (this.queue.filter(t => typeof order(t) === 'number').length !== this.queue.length) {
+			throw `Disable <sort> option or specify <order> parameter on tasks`
 		}
+		
+		return this.queue.sort((a, b) => order(a) - order(b))
 	}
 
 	async enqueue(tasks)
@@ -191,11 +217,12 @@ class TasksManager
 		for (let task of tasks)
 		{
 			task = await this.check(task)
-			
 			this.queue.push(task._up())
+			if (this.shouldSort) this.sortQueue()
 			console.log(`> [Scraper] Enqueue Task(${this.queue.length}) - ${task.name}`)
-			// if (false) this.sort()
 		}
+
+		return true
 	}
 		
 	async check(task)
@@ -209,7 +236,7 @@ class TasksManager
 			}else if (typeof f.parameters != 'object') {
 				throw `Script must export a constant "parameters" (Object)`
 
-			} else if (typeof f.endpoint != 'string' || await !Utils._checkUrl(f.endpoint)) {
+			} else if (typeof f.endpoint != 'string' || await !Utils.checkUrl(f.endpoint)) {
 				throw `Parameter <endpoint>(${f.endpoint}) must be a valid endpoint`
 
 			// } else if (typeof f.parameters.order != 'number' && typeof f.parameters.order != 'string') {
@@ -228,6 +255,32 @@ class TasksManager
 
 		return task
 	}
+
+	async getResult(name = false)
+	{
+		let unfinished = this.queue.filter(t => t.state != 'finished')
+		let result = {}
+
+		if (unfinished.length > 0){
+			throw `Execution is not yet finished, there are ${unfinished.length} pending tasks`
+		}
+
+		// maybe do in scraper ?
+		// if (this.shouldMerge) {
+		// 	let i = 0
+		// 	while(i<this.queue.length)
+		// 	{
+		// 		await Utils.merge(this.queue[0+i].result.data, this.queue[1+i].result.data)
+		// 		console.log(g)
+		// 		i++
+		// 	}
+		// }
+
+		// result.v = ''
+		// result.v = ''
+
+		return this.queue // TMP return result
+	}
 }
 
 class Utils
@@ -237,7 +290,7 @@ class Utils
 		throw 'cant be instantie directory'
 	}
 
-	static async _merge(data, patch)
+	static async merge(data, patch)
 	{
 		data = Object.keys(data).length > 0 ? data : new (patch.constructor)()
 
@@ -248,25 +301,25 @@ class Utils
 		switch(patch.constructor)
 		{
 			case Array  : data = [].concat(data, patch); break
-			case Object : data = Utils._deepAssign(data, patch); break
+			case Object : data = Utils.deepAssign(data, patch); break
 		}
 
 		return data
 	}
 
-	static _deepAssign(target, source)
+	static deepAssign(target, source)
 	{
 		for (const k of Object.keys(source)) 
 		{
 			if (source[k] instanceof Object && k in target) {
-				Object.assign(source[k], Utils._deepAssign(target[k], source[k]))
+				Object.assign(source[k], Utils.deepAssign(target[k], source[k]))
 			}
 		}
 		Object.assign(target || {}, source)
 		return target
 	}
 
-	static _walkObj(obj, keys)
+	static walkObj(obj, keys)
 	{
 		let i = 0
 		while(obj)
@@ -277,7 +330,7 @@ class Utils
 		}
 	}
 
-	static async _checkUrl(url)
+	static async checkUrl(url)
 	{
 		try { return Boolean(new URL(url)) } catch(e) { return false }
 	}
@@ -290,7 +343,9 @@ class Monitor
 		const color = "\x1b[31m"
 		const head = code ? `[ERROR] #${code}` : `[ERROR]`
 		console.error(new Error(`${color}${head}\n> ${e}\n`))
+		process.exit(1)
 	}
 }
 
 export { Abstract, defaultOptions, Task, TasksManager, Utils, Monitor }
+

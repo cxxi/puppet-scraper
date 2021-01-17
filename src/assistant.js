@@ -4,9 +4,9 @@ import inquirer from 'inquirer'
 
 import { Abstract, defaultOptions } from './core.js'
 
-// 	(CLI)
-// 	config
-// 	script [show,add,remove,check,run]
+// (CLI)
+// config
+// script [show,add,remove,check,run]
 // process.argv.length == 4
 
 
@@ -21,7 +21,6 @@ export default class Assistant extends Abstract
 
 		// console.log('> hello from assistant')
 		// console.log('> argv: '+JSON.stringify(argv))
-
 	}
 
 	async getUI()

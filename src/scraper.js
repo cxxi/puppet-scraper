@@ -13,18 +13,24 @@ export default class Scraper extends Abstract
 	constructor(options = {})
 	{	
 		super(defaultOptions)
+		this._initialization(options)
 
-		this.options._apply(options)
 		this.navContext = null
 		this.navInstance = null
 
 		Object.seal(this)
+
 		return this
 	}
 
 	getTasks(name = false)
 	{
 		return this.tasksManager.getTask(name)
+	}
+
+	getResult(name = false)
+	{
+		return this.tasksManager.getResult(name)
 	}
 
 	async mount(targets)
@@ -59,64 +65,41 @@ export default class Scraper extends Abstract
 			const tasks = this.getTasks()
 
 			tasks.forEach(t => t._up())
-			// console.log(tasks.state)
 
-			// CAN MAKE AN ALTERNATE SYSTEM WITH CONCURRENCE
 			for (const task of tasks)
 			{
 				task._up()
-				// console.log(task.state)
+
+				let timeleft = Date.now()
 				await this.navInstance.goto(task.endpoint)
-				result[task.name] = await task.run(this.navInstance)
+				let data = await task.run(this.navInstance)
+				timeleft = Date.now()-timeleft
+
+				task.result = Object.assign({}, task.result, {
+					data: data,
+					length: data.length,
+					timeleft: timeleft
+				})
 
 				task._up()
 			}
 
 			await this.navContext.close()
+			return await this.getResult()
 
-			return !this.options.rawResult 
-				? {v: result, l: 0 }
-				: result
-
-			// for (const script of this.scripts)
-			// {
-			// 	const url = script.parameters.url
-			// 	const response = { v: {}, l: 0, t: url, e: [] }
-				
-			// 	await this.navInstance.goto(url)
-
-			// 	const scraped = script.dataTransform
-			// 	? await script.dataTransform(script.run(this.navInstance))
-			// 	: await script.run(this.navInstance)
-
-			// 	if (this.options.merge) {
-
-			// 		response.v = await this._merge(response.v, scraped)
-
-			// 		/* make calc length function */
-			// 		response.l = !Array.isArray(response.v)
-			// 		? Object.keys(response.v).length
-			// 		: response.v.length
-
-			// 	} else {
-
-			// 		response.v[script.name] = scraped
-			// 		if (script.callback) script.callback(scraped)
-
-			// 		const dl = script.parameters.downloads
-			// 		if (Array.isArray(dl) && dl.length > 0) {
-			// 			this._getResources(response)
-			// 			// check double download
-			// 		}
+			// if (this.options.merge) {
+			// 	response.v = await this._merge(response.v, scraped)
+			// } else {
+			// 	response.v[script.name] = scraped
+			// 	if (script.callback) script.callback(scraped)
+			// 	const dl = script.parameters.downloads
+			// 	if (Array.isArray(dl) && dl.length > 0) {
+			// 		this._getResources(response)
+			// 		// check double download
 			// 	}
-
-			// 	// await this._persist(url, data, task.dataTransform)
-			// 	// await this._write(`test.json`, response)
 			// }
-
-			// if (this.options.downloads.length > 0) {
-			// 	await this._getResources(response)
-			// }
+			// await this._persist(url, data, task.dataTransform)
+			// await this._write(`test.json`, response)
 		}
 		
 		catch(e) { this._err(e) }
@@ -128,7 +111,7 @@ export default class Scraper extends Abstract
 
 		Object.values(response.v).forEach(v => {
 			this.options.downloads.forEach(s => {
-				let path = Utils._walkObj(v, s.split(this.options.dlSeparator))
+				let path = Utils.walkObj(v, s.split(this.options.dlSeparator))
 				typeof path == 'string' ? links.push(path) : null
 			})
 		})
@@ -161,17 +144,3 @@ export default class Scraper extends Abstract
 	// 		await fs.writeFileSync(`${script.parameters.outputDir}/${filename}`, JSON.stringify(response, null, 2))
 	//  }
 }
-
-
-// function * iterableObj(target) 
-// {
-// 	yield 'This'
-// 	yield 'is'
-// 	yield 'iterable.'
-// }
-// for (const val of iterableObj()) {
-//   console.log(val);
-// }
-// This
-// is 
-// iterable.
