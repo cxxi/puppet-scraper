@@ -3,8 +3,9 @@
 import puppeteer from 'puppeteer'
 import https     from 'https'
 import http      from 'http'
+import readline  from 'readline'
 
-import { Abstract, defaultOptions, Utils } from './core.js'
+import { Abstract, defaultOptions, Monitor, Utils } from './core.js'
 
 
 export default class Scraper extends Abstract
@@ -18,6 +19,7 @@ export default class Scraper extends Abstract
 		this.navInstance = null
 
 		Object.seal(this)
+		Monitor.out(`> [Scraper] Hello from Scraper !`, 2)
 
 		return this
 	}
@@ -32,7 +34,7 @@ export default class Scraper extends Abstract
 		return this.tasksManager.getResult(name)
 	}
 
-	async mount(targets)
+	async enqueue(targets)
 	{
 		try
 		{
@@ -63,11 +65,26 @@ export default class Scraper extends Abstract
 			const result = {}
 			const tasks = this.getTasks()
 
-			tasks.forEach(t => t._up())
+			Monitor.out(1)
+			Monitor.out(`> [Scraper] Going run the tasks in queue...`, 1)
+			Monitor.out(`> [Scraper] `)
+			console.log(this.options)
+			Monitor.out(1)
+			
+
+			tasks.forEach(task => {
+				task._up()
+				process.stdout.write(`> [Scraper] \x1b[43m\x1b[37m ${task.state}  \x1b[0m Task ${task.name}\n`)
+			})
+
+			let cursor = readline.createInterface({ input: process.stdin, output: process.stdout }).getCursorPos()
+			readline.moveCursor(process.stdout, 0, cursor.rows-tasks.length)
 
 			for (const task of tasks)
 			{
 				task._up()
+				process.stdout.write(`> [Scraper] \x1b[42m\x1b[37m ${task.state}  \x1b[0m Task ${task.name}`)
+				readline.cursorTo(process.stdout, 0)
 
 				let timeleft = Date.now()
 				await this.navInstance.goto(task.endpoint)
@@ -86,12 +103,14 @@ export default class Scraper extends Abstract
 				})
 
 				task._up()
+				process.stdout.write(`> [Scraper] \x1b[46m\x1b[37m ${task.state} \x1b[0m Task ${task.name}\n`)
 			}
 
 			await this.navContext.close()
+
 			// 	if (task.callback) task.callback(result)
+			//  if (await Utils.writeFile(`test.json`, response)
 			return await this.getResult()
-			// return await Utils.writeFile(`test.json`, response)
 		}
 		
 		catch(e) { this._err(e) }

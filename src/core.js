@@ -9,7 +9,7 @@ const defaultOptions = {
 	rawResult: false, 
 	merge: false,
 	sort: false,
-	dlSeparator: '>'
+	_dlSeparator: '>'
 }
 
 class Abstract
@@ -34,6 +34,13 @@ class Abstract
 			value: option => {
 				this.options = Utils.deepAssign(this.options, option)
 			}
+		})
+
+		Object.defineProperty(this.options, '_dlSeparator', {
+			enumerable: false,
+			configurable: true,
+			writable: true,
+			value: this.options._dlSeparator
 		})
 	}
 
@@ -222,7 +229,7 @@ class TasksManager
 			task = await this.check(task)
 			this.queue.push(task._up())
 			if (this.shouldSort) this.sortQueue()
-			console.log(`> [Scraper] Enqueue Task(${this.queue.length}) - ${task.name}`)
+			Monitor.out(`> [Scraper] Enqueue Task #${this.queue.length} ${task.name}\n`)
 		}
 
 		return true
@@ -362,39 +369,23 @@ class Monitor
 		console.error(new Error(`${color}${head}\n> ${e}\n`))
 		process.exit(1)
 	}
+
+	static out(a, b = 0)
+	{
+		switch(a.constructor)
+		{
+			case String: {
+				process.stdout.write(a)
+				for(let i=0;i<b;i++) process.stdout.write('\n')
+				break
+			}
+			case Number: {
+				for(let i=0;i<a;i++) process.stdout.write('\n')
+				break
+			}
+		}
+		
+	}
 }
 
-// class LoadingBar 
-// {
-//     constructor(size) 
-//     {
-//         this.size = size
-//         this.cursor = 0
-//         this.timer = null
-//     }
-
-//     start() 
-//     {
-//         process.stdout.write("\x1B[?25l")
-//         process.stdout.write("[")
-//         for (let i = 0; i < this.size; i++) {
-//             process.stdout.write("-")
-//         }
-//         process.stdout.write("]")
-//         this.cursor = 1
-//         readline.cursorTo(process.stdout, this.cursor, 0)
-//         this.timer = setInterval( _ => {
-//             process.stdout.write("=")
-//             this.cursor++
-//             if (this.cursor >= this.size) {
-//                 clearTimeout(this.timer)
-//                 process.stdout.write("\x1B[?25h")
-//             }
-//         }, 100)
-//     }
-// }
-// const ld = new LoadingBar(50)
-// ld.start()
-
 export { Abstract, defaultOptions, Task, TasksManager, Utils, Monitor }
-
