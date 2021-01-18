@@ -2,10 +2,11 @@
 
 import { jest } from '@jest/globals'
 
-import { Cli, Task } from '../src/index.js'
-import Core          from '../src/core.js'
-import Scraper       from '../src/scraper.js'
-import Assistant     from '../src/assistant.js'
+
+import { Abstract, Task } from '../src/core.js'
+import { Cli }            from '../src/index.js'
+import Scraper            from '../src/scraper.js'
+import Assistant          from '../src/assistant.js'
 
 
 describe('Check Integrity of sources', function(){
@@ -16,10 +17,6 @@ describe('Check Integrity of sources', function(){
 
 	it('Task should return an instance of Task class', function(){
 		expect((new Task()).constructor).toBe(Task)
-	})
-
-	it('Core should return an instance of Core class', function(){
-		expect((new Core()).constructor).toBe(Core)
 	})
 
 	it('Scraper should return an instance of Scraper class', function(){

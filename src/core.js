@@ -6,9 +6,11 @@ import fs       from 'fs'
 
 
 const defaultOptions = {
-	rawResult: false, 
+	rawResult: false,
+	quiet: false, 
 	merge: false,
 	sort: false,
+	debug: false,
 	_dlSeparator: '>'
 }
 
@@ -36,6 +38,7 @@ class Abstract
 			}
 		})
 
+		// debug option should display this (enumerable)
 		Object.defineProperty(this.options, '_dlSeparator', {
 			enumerable: false,
 			configurable: true,
@@ -91,6 +94,12 @@ class Task
 		this.parameters = {}
 		this.endpoint = null
 		this.name = null
+
+		/* [more parameters]
+		 * recrawlerAfter X
+		 * dequeueAfterRun
+		 * [end] 
+		 */
 		
 		Object.defineProperty(this, 'name', {
 			configurable: false,
@@ -354,6 +363,8 @@ class Utils
 
 	static async writeFile(filename, response)
 	{
+		//  if (await Utils.writeFile(`test.json`, response)
+		
 		// await fs.writeFileSync(`${script.parameters.outputDir}/${filename}`, JSON.stringify(response, null, 2))
 	    // const dataYml = await yaml.stringify(data)
 	    // await fs.writeFileSync(`${this.path.dest}/items.yml`, dataYml)
@@ -384,7 +395,22 @@ class Monitor
 				break
 			}
 		}
-		
+	}
+
+	static taskProcess(task, endline = false)
+	{
+		const format = state => {
+			switch(state)
+			{
+				case 'pending' : return `\x1b[43m\x1b[37m ${task.state}  \x1b[0m`
+				case 'running' : return `\x1b[42m\x1b[37m ${task.state}  \x1b[0m`
+				case 'finished': return `\x1b[46m\x1b[37m ${task.state} \x1b[0m`
+			}
+		}
+
+		task._up()
+		process.stdout.write(`> [Scraper] ${format(task.state)} ${task.name}`)
+		if (endline) process.stdout.write(`\n`)
 	}
 }
 

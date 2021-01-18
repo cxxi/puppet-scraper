@@ -3,7 +3,7 @@
 import puppeteer from 'puppeteer'
 import https     from 'https'
 import http      from 'http'
-import readline  from 'readline'
+import Readline  from 'readline'
 
 import { Abstract, defaultOptions, Monitor, Utils } from './core.js'
 
@@ -62,59 +62,63 @@ export default class Scraper extends Abstract
 			this.navContext = await puppeteer.launch()
 			this.navInstance = await this.navContext.newPage()
 
-			const result = {}
-			const tasks = this.getTasks()
-
-			Monitor.out(1)
-			Monitor.out(`> [Scraper] Going run the tasks in queue...`, 1)
-			Monitor.out(`> [Scraper] `)
-			console.log(this.options)
-			Monitor.out(1)
-			
-
-			tasks.forEach(task => {
-				task._up()
-				process.stdout.write(`> [Scraper] \x1b[43m\x1b[37m ${task.state}  \x1b[0m Task ${task.name}\n`)
-			})
-
-			let cursor = readline.createInterface({ input: process.stdin, output: process.stdout }).getCursorPos()
-			readline.moveCursor(process.stdout, 0, cursor.rows-tasks.length)
-
-			for (const task of tasks)
-			{
-				task._up()
-				process.stdout.write(`> [Scraper] \x1b[42m\x1b[37m ${task.state}  \x1b[0m Task ${task.name}`)
-				readline.cursorTo(process.stdout, 0)
-
-				let timeleft = Date.now()
-				await this.navInstance.goto(task.endpoint)
-				let data = await task.run(this.navInstance)
-
-				let downloads = task.parameters.downloads
-				if (Array.isArray(downloads) && downloads.length > 0) {
-					task.result.files = await this._getResources(task, data)
-				}
-
-				task.result = Object.assign({}, task.result, {
-					length: (Array.isArray(data) ? data : Object.keys(data)).length,
-					timeleft: `${(Date.now()-timeleft)/1000}s`,
-					Milileft: Date.now()-timeleft,
-					data: data
-				})
-
-				task._up()
-				process.stdout.write(`> [Scraper] \x1b[46m\x1b[37m ${task.state} \x1b[0m Task ${task.name}\n`)
-			}
-
+			this._initRun()
+			await this._execRun()
 			await this.navContext.close()
 
-			// 	if (task.callback) task.callback(result)
-			//  if (await Utils.writeFile(`test.json`, response)
 			return await this.getResult()
 		}
 		
 		catch(e) { this._err(e) }
 	}
+
+	_initRun()
+	{
+		const tasks = this.getTasks()
+
+		Monitor.out(1)
+		Monitor.out(`> [Scraper] Going run the tasks in queue...`, 1)
+		Monitor.out(`> [Scraper] Options: `)
+		console.log(this.options)
+		Monitor.out(1)
+		
+		tasks.forEach(task => Monitor.taskProcess(task, true))
+
+		const rl = Readline.createInterface({ input: process.stdin, output: process.stdout })
+		Readline.moveCursor(process.stdout, 0, (rl.getCursorPos()).rows-tasks.length)
+	}
+
+	async _execRun()
+	{
+		const tasks = this.getTasks()
+
+		for (const task of tasks)
+		{
+			Monitor.taskProcess(task)
+			Readline.cursorTo(process.stdout, 0)
+
+			let timeleft = Date.now()
+			await this.navInstance.goto(task.endpoint)
+			let data = await task.run(this.navInstance)
+
+			let downloads = task.parameters.downloads
+			if (Array.isArray(downloads) && downloads.length > 0) {
+				task.result.files = await this._getResources(task, data)
+			}
+
+			task.result = Object.assign({}, task.result, {
+				length: (Array.isArray(data) ? data : Object.keys(data)).length,
+				timeleft: `${(Date.now()-timeleft)/1000}s`,
+				Milileft: Date.now()-timeleft,
+				data: data
+			})
+
+			Monitor.taskProcess(task, true)
+
+			if (task.callback) task.callback(result)
+		}
+	}
+
 
 	async _getResources(task, data)
 	{
