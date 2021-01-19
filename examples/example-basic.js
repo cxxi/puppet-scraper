@@ -3,7 +3,7 @@
 export const name = 'example-basic'
 
 export const parameters = {
-	url: 'https://fr.wikipedia.org/wiki/Web_scraping'
+	endpoint: 'https://fr.wikipedia.org/wiki/Web_scraping'
 }
 
 export const run = async page => {

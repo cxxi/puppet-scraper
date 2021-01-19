@@ -6,5 +6,5 @@
 
 'use strict'
 
-import Scraper from './src/index.js'
-export default Scraper
+import Scraper from './src'
+export default Scraper 

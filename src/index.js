@@ -1,15 +1,16 @@
 'use strict'
 
 import Assistant from './assistant.js'
-import Scraper from './scraper.js'
+import Scraper   from './scraper.js'
+import { Task }  from './core.js'
 
-export const Cli = async argv => {
+const Cli = async argv => {
 
 	try
 	{
-		const assistant = new Assistant(process.argv.splice(2))
+		const assistant = new Assistant(argv.splice(2))
 
-		switch(process.argv[2])
+		switch(argv[2])
 		{
 			case undefined: return await assistant.getUI()
 		}
@@ -22,7 +23,7 @@ export const Cli = async argv => {
 		console.error(e)
 		process.exit(1)
 	}
-
 }
 
+export { Cli, Scraper, Task }
 export default Scraper
