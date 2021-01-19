@@ -1,9 +1,9 @@
 'use strict'
 
 import puppeteer from 'puppeteer'
+import Readline  from 'readline'
 import https     from 'https'
 import http      from 'http'
-import Readline  from 'readline'
 
 import { Abstract, defaultOptions, Monitor, Utils } from './core.js'
 
@@ -19,7 +19,7 @@ export default class Scraper extends Abstract
 		this.navInstance = null
 
 		Object.seal(this)
-		Monitor.out(`> [Scraper] Hello from Scraper !`, 2)
+		Monitor.out(`> ${Monitor.n} \x1b[36mSay\x1b[0m Hello !`, 2)
 
 		return this
 	}
@@ -74,14 +74,10 @@ export default class Scraper extends Abstract
 
 	_initRun()
 	{
-		const tasks = this.getTasks()
-
-		Monitor.out(1)
-		Monitor.out(`> [Scraper] Going run the tasks in queue...`, 1)
-		Monitor.out(`> [Scraper] Options: `)
-		console.log(this.options)
-		Monitor.out(1)
+		Monitor.runContext(this.options)
+		Monitor.out(`> ${Monitor.n} \x1b[36mRun\x1b[0m`, 1)
 		
+		const tasks = this.getTasks()
 		tasks.forEach(task => Monitor.taskProcess(task, true))
 
 		const rl = Readline.createInterface({ input: process.stdin, output: process.stdout })
@@ -90,26 +86,33 @@ export default class Scraper extends Abstract
 
 	async _execRun()
 	{
-		const tasks = this.getTasks()
-
-		for (const task of tasks)
+		for (let task of this.getTasks())
 		{
 			Monitor.taskProcess(task)
+
+			let timeleft = task.startsTime = Date.now()
+
+			let execTimer = setInterval( _ => {
+				Readline.cursorTo(process.stdout, 0)
+				Monitor.taskRuntime(task, Date.now()-timeleft)
+			}, 100)
+				
 			Readline.cursorTo(process.stdout, 0)
 
-			let timeleft = Date.now()
 			await this.navInstance.goto(task.endpoint)
 			let data = await task.run(this.navInstance)
-
 			let downloads = task.parameters.downloads
 			if (Array.isArray(downloads) && downloads.length > 0) {
 				task.result.files = await this._getResources(task, data)
 			}
 
+			timeleft = Date.now()-timeleft
+			clearInterval(execTimer)
+			Readline.cursorTo(process.stdout, 0)
+
 			task.result = Object.assign({}, task.result, {
 				length: (Array.isArray(data) ? data : Object.keys(data)).length,
-				timeleft: `${(Date.now()-timeleft)/1000}s`,
-				Milileft: Date.now()-timeleft,
+				timeleft: timeleft,
 				data: data
 			})
 
@@ -122,34 +125,32 @@ export default class Scraper extends Abstract
 
 	async _getResources(task, data)
 	{
-		const resources = []
 		const links = []
-
-		if (task.parameters.outputDir.constructor !== String) {
-			throw `Task parameter <outputDir> must be a String` 
-			// finaly if have not parameter outputDir can return base64 ?
-		}
+		const resources = []
 
 		if (task.parameters.downloads.constructor !== Array) {
 			throw `Task parameter <downloads> must be an Array of String` 
-			// finaly it's can be equal to true 
-			// (for key to download at root of object)
 		}
 
 		Object.values(data).forEach(v => {
 			task.parameters.downloads.forEach(s => {
-				let path = Utils.walkObj(v, s.split(this.options.dlSeparator))
+				let path = Utils.walkObj(v, s.split(this.options._dlSeparator))
 				typeof path == 'string' ? links.push(path) : null
 			})
 		})
-		
+
 		for (let link of [...new Set(links)])
 		{
 			let url = !link.startsWith('http://') && !link.startsWith('https://')
 				? await Utils.checkUrl(new URL(link, task.endpoint).href, true)
 				: await Utils.checkUrl(new URL(link).href, true)
 			
-			let filename = task.parameters.outputDir + new URL(url).pathname
+			// If have not parameter outputDir maybe can return base64 ?
+			let outputDir = this.options.outputDir
+				? this.options.outputDir
+				: task.parameters.outputDir
+
+			let filename = outputDir + new URL(url).pathname
 			let file = await Utils.streamSetup(filename)
 
 			resources.push(filename)

@@ -1,15 +1,14 @@
 'use strict'
 
-import readline from 'readline'
-import yaml     from 'yaml'
-import fs       from 'fs'
+import fs from 'fs'
 
 
 const defaultOptions = {
 	rawResult: false,
-	quiet: false, 
+	quiet: false, // useless ?
 	merge: false,
 	sort: false,
+	timeout: 3600000,
 	debug: false,
 	_dlSeparator: '>'
 }
@@ -38,9 +37,8 @@ class Abstract
 			}
 		})
 
-		// debug option should display this (enumerable)
 		Object.defineProperty(this.options, '_dlSeparator', {
-			enumerable: false,
+			enumerable: this.options.debug,
 			configurable: true,
 			writable: true,
 			value: this.options._dlSeparator
@@ -51,9 +49,6 @@ class Abstract
 	{
 		this.options._apply(options)
 		this.tasksManager = new TasksManager(this.options)
-		// make setter for "sort" to update taskManager at same time.
-		// need bridge to update option of taskManager in same 
-		// time user update option on scraper
 	}
 
 	async _loadScript(target)
@@ -92,14 +87,9 @@ class Task
 		}
 
 		this.parameters = {}
-		this.endpoint = null
-		this.name = null
-
-		/* [more parameters]
-		 * recrawlerAfter X
-		 * dequeueAfterRun
-		 * [end] 
-		 */
+		this.startsTime = null
+		this.endpoint   = null
+		this.name       = null
 		
 		Object.defineProperty(this, 'name', {
 			configurable: false,
@@ -238,7 +228,7 @@ class TasksManager
 			task = await this.check(task)
 			this.queue.push(task._up())
 			if (this.shouldSort) this.sortQueue()
-			Monitor.out(`> [Scraper] Enqueue Task #${this.queue.length} ${task.name}\n`)
+			Monitor.out(`> ${Monitor.n} \x1b[36mEnqueue\x1b[0m Task #${this.queue.length} | ${task.name}\n`)
 		}
 
 		return true
@@ -248,30 +238,22 @@ class TasksManager
 	{
 		for (const f of Array.isArray(task) ? task : [task])
 		{
-			if (typeof f.name != 'string' || f.name.length < 1) {
-				// add verif uppercase + lowercase + _ + numeric
+			if (f.name === undefined || f.name.constructor !==  String || f.name.length < 1) {
 				throw `Script must export a constant "name" (String)`
 
-			}else if (typeof f.parameters != 'object') {
+			} else if (!(new RegExp('^([a-z0-9A-Z_-]+)$')).test(f.name)) {		
+				throw `Constant "name" have to contains only Alphanumeric, capital, dash and underscore`
+
+			}else if (typeof f.parameters !== 'object') {
 				throw `Script must export a constant "parameters" (Object)`
 
-			} else if (typeof f.endpoint != 'string' || await !Utils.checkUrl(f.endpoint)) {
-				throw `Parameter <endpoint>(${f.endpoint}) must be a valid endpoint`
-
-			// } else if (typeof f.parameters.order != 'number' && typeof f.parameters.order != 'string') {
-			// 	throw `Parameter <order>(${f.parameters.order}) must be an number or a string`
+			} else if (typeof f.endpoint !== 'string' || await !Utils.checkUrl(f.endpoint)) {
+				throw `Parameter endpoint(${f.endpoint}) must be a valid URL`
 			
-			} else if (typeof f.run != 'function') {
-				throw `Script must export a function "run"`
+			} else if (f.run === undefined || f.run.constructor !== (async _ => {}).constructor) {
+				throw `Script must export an async function named "run"`
 			}
 		}
-
-		// Need refect for support to state with param and without, (when callback can without)
-		//
-		// } else if (typeof m.parameters.outputDir != 'string' 
-		// || !(await fs.statSync(m.parameters.outputDir)).isDirectory()) {
-		// 	throw throw `Parameter <outputDir>(${m.parameters.outputDir}) must be a valid directory path`
-
 		return task
 	}
 
@@ -296,6 +278,10 @@ class TasksManager
 
 			this.queue.forEach(task => result.v[task.name] = task.result.data)
 		}
+
+		// if (this.options.outputDir) {
+		// 	await Utils.writeFile(`test.json`, result.v)
+		// }
 
 		return result
 	}
@@ -361,25 +347,19 @@ class Utils
 		return fs.createWriteStream(filename)
 	}
 
-	static async writeFile(filename, response)
+	static async writeFile(filename, response, task = false)
 	{
-		//  if (await Utils.writeFile(`test.json`, response)
-		
-		// await fs.writeFileSync(`${script.parameters.outputDir}/${filename}`, JSON.stringify(response, null, 2))
-	    // const dataYml = await yaml.stringify(data)
-	    // await fs.writeFileSync(`${this.path.dest}/items.yml`, dataYml)
+		// if (this.options.outputDir) {
+		// 	await fs.writeFileSync(`${this.options.outputDir}/${filename}`, JSON.stringify(response, null, 2))
+		// } else if (task) {
+		// 	await fs.writeFileSync(`${task.parameters.outputDir}/${filename}`, JSON.stringify(response, null, 2))
+		// }
 	}
 }
 
 class Monitor
 {
-	static renderError(e, code = false)
-	{
-		const color = "\x1b[31m"
-		const head = code ? `[ERROR] #${code}` : `[ERROR]`
-		console.error(new Error(`${color}${head}\n> ${e}\n`))
-		process.exit(1)
-	}
+	static n = `[\x1b[34m\x1b[1mScraper\x1b[0m]`
 
 	static out(a, b = 0)
 	{
@@ -397,11 +377,26 @@ class Monitor
 		}
 	}
 
+	static runContext(options)
+	{
+		const refSize = Math.max(...Object.keys(options).map(o => o.length))+1
+
+		Monitor.out(`\n> ${Monitor.n} \x1b[36mPrepare\x1b[0m to running the tasks in queue...`, 2)
+		Monitor.out(`> ${Monitor.n} \x1b[36mOptions\x1b[0m`, 1)
+		for (let [k, v] of Object.entries(options))
+		{
+			k = k+String(' ').repeat(refSize-k.length)
+			Monitor.out(`> ${Monitor.n} \u0B9F\u1397 ${k}: ${v}`, 1)
+		}
+		Monitor.out(1)
+	}
+
 	static taskProcess(task, endline = false)
 	{
 		const format = state => {
 			switch(state)
 			{
+				case 'ready'   : return `\x1b[43m\x1b[37m ${task.state}    \x1b[0m`
 				case 'pending' : return `\x1b[43m\x1b[37m ${task.state}  \x1b[0m`
 				case 'running' : return `\x1b[42m\x1b[37m ${task.state}  \x1b[0m`
 				case 'finished': return `\x1b[46m\x1b[37m ${task.state} \x1b[0m`
@@ -409,9 +404,33 @@ class Monitor
 		}
 
 		task._up()
-		process.stdout.write(`> [Scraper] ${format(task.state)} ${task.name}`)
+		const baseStr = `> ${Monitor.n} ${format(task.state)}`
+		task.state == 'finished'
+			? process.stdout.write(baseStr)
+			: process.stdout.write(`${baseStr}${String(' ').repeat(14)}| ${task.name}`)
+
 		if (endline) process.stdout.write(`\n`)
+
+		return task
 	}
+
+	static taskRuntime(task, time)
+	{
+		let t = time/1000,
+			r = 12-(t.toString().length),
+			d = `${String(' ').repeat(r)}${t}s |`
+
+		process.stdout.write(`> ${Monitor.n} \x1b[42m\x1b[37m ${task.state}  \x1b[0m${d} ${task.name}`)
+	}
+
+	static renderError(e, code = false)
+	{
+		const color = `\x1b[31m`
+		const head = code ? `[ERROR] #${code}` : `[ERROR]`
+		console.error(new Error(`${color}${head}\n> ${e}\n`))
+		process.exit(1)
+	}
+
 }
 
 export { Abstract, defaultOptions, Task, TasksManager, Utils, Monitor }
