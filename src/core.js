@@ -179,6 +179,10 @@ class TasksManager
 		this.shouldSort = false
 		this.shouldMerge = false
 
+		if (typeof args.outputDir === 'string') {
+			this.outputDir = args.outputDir
+		}
+
 		Object.defineProperty(this, 'shouldSort', {
 			enumerable: false,
 			value: args.sort === true
@@ -279,9 +283,9 @@ class TasksManager
 			this.queue.forEach(task => result.v[task.name] = task.result.data)
 		}
 
-		// if (this.options.outputDir) {
-		// 	await Utils.writeFile(`test.json`, result.v)
-		// }
+		if (this.outputDir) {
+			await Utils.writeFile(`${this.outputDir}/items.json`, result.v)
+		}
 
 		return result
 	}
@@ -347,8 +351,10 @@ class Utils
 		return fs.createWriteStream(filename)
 	}
 
-	static async writeFile(filename, response, task = false)
+	static async writeFile(filename, response)
 	{
+		await fs.writeFileSync(filename, JSON.stringify(response, null, 2))
+		return filename
 		// if (this.options.outputDir) {
 		// 	await fs.writeFileSync(`${this.options.outputDir}/${filename}`, JSON.stringify(response, null, 2))
 		// } else if (task) {

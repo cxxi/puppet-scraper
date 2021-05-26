@@ -1,3 +1,4 @@
 #!/usr/bin/env node
 import {Cli} from '../src/index.js'
-Cli(process.argv)
+const argv = process.argv
+Cli(argv)

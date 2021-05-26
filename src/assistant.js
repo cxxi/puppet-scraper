@@ -12,7 +12,7 @@ import { Abstract, defaultOptions } from './core.js'
 
 export default class Assistant extends Abstract
 {
-	constructor(argv)
+	constructor()
 	{
 		super(defaultOptions)
 
@@ -23,8 +23,89 @@ export default class Assistant extends Abstract
 		// console.log('> argv: '+JSON.stringify(argv))
 	}
 
-	async getUI()
+	async ask_context()
 	{
-		this._err("> Cli is not implemented yet\n")
+		const choicesMenu = [
+			'Configure Options',
+			'Manage Tasks',
+			'Run Scraper',
+			'Show Logs',
+			new inquirer.Separator(),
+			'Exit'
+		]
+		return (await inquirer.prompt([{
+			name: 'action',
+			message: "What do you want to do today ?",
+			type: 'list',
+			choices: choicesMenu,
+			filter: answers => {
+				switch(answers)
+				{
+					case 'Configure Options' : return 'option'
+					case 'Manage Tasks'      : return 'task'
+					case 'Run Scraper'       : return 'run'
+					case 'Show Logs'         : return 'log'
+					default: return 'end'
+				}
+			}
+		}])).action
+	}
+	async ask_optionUI()
+	{
+		// cli must persist options session ?
+		const choicesMenu = [
+			{
+	          name: 'rawResult',
+	          checked: this.options.rawResult,
+	        },
+				{
+	          name: 'quiet',
+	          checked: this.options.quiet,
+	        },
+				{
+	          name: 'merge',
+	          checked: this.options.merge,
+	        },
+				{
+	          name: 'sort',
+	          checked: this.options.sort,
+	        },
+			{
+	          name: 'debug',
+	          checked: this.options.debug,
+	        }
+		]
+
+		return (await inquirer.prompt([{
+			name: 'action',
+			message: "What do you want to do today ?",
+			type: 'checkbox',
+			choices: choicesMenu//,
+			// filter: answers => {
+			// 	switch(answers)
+			// 	{
+			// 		case 'Configure Options' : return 'option'
+			// 		case 'Manage Tasks'      : return 'task'
+			// 		case 'Run Scraper'       : return 'run'
+			// 		case 'Show Logs'         : return 'log'
+			// 		default: return 'end'
+			// 	}
+			// }
+		}])).action
+	}
+
+	prevent(args)
+	{
+		return args
+	}
+
+	_preventContext()
+	{
+
+	}
+
+	_preventUI()
+	{
+
 	}
 }

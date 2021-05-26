@@ -158,17 +158,21 @@ export default class Scraper extends Abstract
 			switch(new URL(url).protocol)
 			{
 				case 'https:': {
-					https.get(url, response => {
-					    response.pipe(file)
-					    file.on('finish', _ => file.close())
-					}); break
+					// await https.get(url, response => {
+					//     response.pipe(file)
+					//     file.on('finish', _ => file.close())
+					// }); break
+					const request = await https.get(url, response => response.pipe(file))
+					break
 				}
 
 				case 'http:': {
-					http.get(url, response => {
-					    response.pipe(file)
-					    file.on('finish', _ => file.close())
-					}); break
+					// await http.get(url, response => {
+					//     response.pipe(file)
+					//     file.on('finish', _ => file.close())
+					// }); break
+					const request = await http.get(url, response => response.pipe(file))
+					break
 				}
 			}
 		}
