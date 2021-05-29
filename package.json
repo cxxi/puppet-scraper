@@ -6,21 +6,17 @@
   "license": "MIT",
   "repository": "cxxi/puppet-scraper",
   "type": "module",
-  "main": "src",
+  "main": "./commonjs/entry.js",
+  "exports": {
+    "./esm": "./esm/entry.js"
+  },
+  "module": "./esm/entry.js",
   "engines": {
     "node": ">=13.2"
   },
   "scripts": {
-    "test": "node --experimental-vm-modules node_modules/.bin/jest",
-    "start": "bin/scraper-cli.js"
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
   },
-  "bin": {
-    "scraper-cli": "bin/scraper-cli.js"
-  },
-  "files": [
-    "src",
-    "index.js"
-  ],
   "keywords": [
     "scrap",
     "scraper",
@@ -40,7 +36,6 @@
     "cli"
   ],
   "dependencies": {
-    "inquirer": "^7.3.3",
     "puppeteer": "^5.5.0"
   },
   "devDependencies": {

@@ -2,21 +2,32 @@
 
 import puppeteer from 'puppeteer'
 import Readline  from 'readline'
-import https     from 'https'
-import http      from 'http'
 
-import { Abstract, defaultOptions, Monitor, Utils } from './core.js'
+import { Core, Utils, Monitor } from './core.js'
 
 
-export default class Scraper extends Abstract
+export default class Scraper extends Core
 {
 	constructor(options = {})
 	{	
-		super(defaultOptions)
+		super({
+			outputDir: null,
+			merge: false,
+			sort: false,
+			debug: false,
+			_timeout: 3600000,
+			_dlSeparator: '>'
+		})
+
 		this._initialization(options)
 
-		this.navContext = null
-		this.navInstance = null
+		Object.defineProperty(this, 'navContext', {
+			enumerable: false, writable: true, value: null
+		})
+
+		Object.defineProperty(this, 'navInstance', {
+			enumerable: false, writable: true, value: null
+		})
 
 		Object.seal(this)
 		Monitor.out(`> ${Monitor.n} \x1b[36mSay\x1b[0m Hello !`, 2)
@@ -81,7 +92,7 @@ export default class Scraper extends Abstract
 		tasks.forEach(task => Monitor.taskProcess(task, true))
 
 		const rl = Readline.createInterface({ input: process.stdin, output: process.stdout })
-		Readline.moveCursor(process.stdout, 0, (rl.getCursorPos()).rows-tasks.length)
+		Readline.moveCursor(process.stdout, 0, 0-tasks.length)
 	}
 
 	async _execRun()
@@ -90,20 +101,42 @@ export default class Scraper extends Abstract
 		{
 			Monitor.taskProcess(task)
 
-			let timeleft = task.startsTime = Date.now()
-
+			let timeleft  = task.startsTime = Date.now(),
+				timeout   = this.options._timeout
+			
 			let execTimer = setInterval( _ => {
-				Readline.cursorTo(process.stdout, 0)
-				Monitor.taskRuntime(task, Date.now()-timeleft)
+
+				if (Date.now()-timeleft > timeout && timeout != 0) {
+
+					Readline.cursorTo(process.stdout, 0)
+					Monitor.taskRuntime(task, timeout)
+					Readline.moveCursor(process.stdout, 0, 2)
+
+					Monitor.out(1)
+					Monitor.renderError(`TIMEOUT : the process exceeds ${timeout}ms`)
+					Monitor.out(1)
+
+					process.exit(1)
+
+				} else {
+
+					Readline.cursorTo(process.stdout, 0)
+					Monitor.taskRuntime(task, Date.now()-timeleft)
+				}
+				
 			}, 100)
 				
 			Readline.cursorTo(process.stdout, 0)
 
 			await this.navInstance.goto(task.endpoint)
 			let data = await task.run(this.navInstance)
+
 			let downloads = task.parameters.downloads
 			if (Array.isArray(downloads) && downloads.length > 0) {
 				task.result.files = await this._getResources(task, data)
+			} else {
+				Readline.cursorTo(process.stdout, 0)
+				Monitor.taskProcess(task)
 			}
 
 			timeleft = Date.now()-timeleft
@@ -117,8 +150,8 @@ export default class Scraper extends Abstract
 			})
 
 			Monitor.taskProcess(task, true)
-
-			if (task.callback) task.callback(result)
+			if (task.callback) await task.callback(task.result)
+			// rajouter une step callback avant finish
 		}
 	}
 
@@ -139,7 +172,11 @@ export default class Scraper extends Abstract
 			})
 		})
 
-		for (let link of [...new Set(links)])
+		task.countDownloads = [0, links.length]
+		Readline.cursorTo(process.stdout, 0)
+		Monitor.taskProcess(task)
+
+		for (const [i, link] of [...new Set(links)].entries())
 		{
 			let url = !link.startsWith('http://') && !link.startsWith('https://')
 				? await Utils.checkUrl(new URL(link, task.endpoint).href, true)
@@ -151,28 +188,14 @@ export default class Scraper extends Abstract
 				: task.parameters.outputDir
 
 			let filename = outputDir + new URL(url).pathname
-			let file = await Utils.streamSetup(filename)
+			let file = await Utils.download(filename, url)
 
 			resources.push(filename)
-			
-			switch(new URL(url).protocol)
-			{
-				case 'https:': {
-					// await https.get(url, response => {
-					//     response.pipe(file)
-					//     file.on('finish', _ => file.close())
-					// }); break
-					const request = await https.get(url, response => response.pipe(file))
-					break
-				}
 
-				case 'http:': {
-					// await http.get(url, response => {
-					//     response.pipe(file)
-					//     file.on('finish', _ => file.close())
-					// }); break
-					const request = await http.get(url, response => response.pipe(file))
-					break
+			if (this.options.debug) {
+				task.countDownloads = [i+1, [...new Set(links)].length]
+				if (i+1 == [...new Set(links)].length) {
+					await new Promise(resolve => setTimeout(resolve, 1500))
 				}
 			}
 		}

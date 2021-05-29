@@ -1,0 +1,204 @@
+'use strict'
+
+const puppeteer = require('puppeteer')
+const Readline  = require('readline')
+
+const { Core, Utils, Monitor } = require('./core.js')
+
+module.exports = class Scraper extends Core
+{
+	constructor(options = {})
+	{	
+		super({
+			outputDir: null,
+			merge: false,
+			sort: false,
+			debug: false,
+			_timeout: 3600000,
+			_dlSeparator: '>'
+		})
+
+		this._initialization(options)
+
+		Object.defineProperty(this, 'navContext', {
+			enumerable: false, writable: true, value: null
+		})
+
+		Object.defineProperty(this, 'navInstance', {
+			enumerable: false, writable: true, value: null
+		})
+
+		Object.seal(this)
+		Monitor.out(`> ${Monitor.n} \x1b[36mSay\x1b[0m Hello !`, 2)
+
+		return this
+	}
+
+	getTasks(name = false)
+	{
+		return this.tasksManager.getTask(name)
+	}
+
+	getResult(name = false)
+	{
+		return this.tasksManager.getResult(name)
+	}
+
+	async enqueue(targets)
+	{
+		try
+		{
+			for (const target of Array.isArray(targets) ? targets : [targets])
+			{
+				let tasks = target.constructor === String
+					? await this._loadScript(target)
+					: target
+				
+				await this.tasksManager.enqueue(
+					Array.isArray(tasks) ? tasks : [tasks]
+				)
+			}
+
+			return this
+		}
+		
+		catch(e) { this._err(e) }
+	}
+
+	async scrap(options = {})
+	{
+		try
+		{			
+			this.navContext = await puppeteer.launch()
+			this.navInstance = await this.navContext.newPage()
+
+			this._initRun()
+			await this._execRun()
+			await this.navContext.close()
+
+			return await this.getResult()
+		}
+		
+		catch(e) { this._err(e) }
+	}
+
+	_initRun()
+	{
+		Monitor.runContext(this.options)
+		Monitor.out(`> ${Monitor.n} \x1b[36mRun\x1b[0m`, 1)
+		
+		const tasks = this.getTasks()
+		tasks.forEach(task => Monitor.taskProcess(task, true))
+
+		const rl = Readline.createInterface({ input: process.stdin, output: process.stdout })
+		Readline.moveCursor(process.stdout, 0, 0-tasks.length)
+	}
+
+	async _execRun()
+	{
+		for (let task of this.getTasks())
+		{
+			Monitor.taskProcess(task)
+
+			let timeleft  = task.startsTime = Date.now(),
+				timeout   = this.options._timeout
+			
+			let execTimer = setInterval( _ => {
+
+				if (Date.now()-timeleft > timeout && timeout != 0) {
+
+					Readline.cursorTo(process.stdout, 0)
+					Monitor.taskRuntime(task, timeout)
+					Readline.moveCursor(process.stdout, 0, 2)
+
+					Monitor.out(1)
+					Monitor.renderError(`TIMEOUT : the process exceeds ${timeout}ms`)
+					Monitor.out(1)
+
+					process.exit(1)
+
+				} else {
+
+					Readline.cursorTo(process.stdout, 0)
+					Monitor.taskRuntime(task, Date.now()-timeleft)
+				}
+				
+			}, 100)
+				
+			Readline.cursorTo(process.stdout, 0)
+
+			await this.navInstance.goto(task.endpoint)
+			let data = await task.run(this.navInstance)
+
+			let downloads = task.parameters.downloads
+			if (Array.isArray(downloads) && downloads.length > 0) {
+				task.result.files = await this._getResources(task, data)
+			} else {
+				Readline.cursorTo(process.stdout, 0)
+				Monitor.taskProcess(task)
+			}
+
+			timeleft = Date.now()-timeleft
+			clearInterval(execTimer)
+			Readline.cursorTo(process.stdout, 0)
+
+			task.result = Object.assign({}, task.result, {
+				length: (Array.isArray(data) ? data : Object.keys(data)).length,
+				timeleft: timeleft,
+				data: data
+			})
+
+			Monitor.taskProcess(task, true)
+			if (task.callback) await task.callback(task.result)
+			// rajouter une step callback avant finish
+		}
+	}
+
+
+	async _getResources(task, data)
+	{
+		const links = []
+		const resources = []
+
+		if (task.parameters.downloads.constructor !== Array) {
+			throw `Task parameter <downloads> must be an Array of String` 
+		}
+
+		Object.values(data).forEach(v => {
+			task.parameters.downloads.forEach(s => {
+				let path = Utils.walkObj(v, s.split(this.options._dlSeparator))
+				typeof path == 'string' ? links.push(path) : null
+			})
+		})
+
+		task.countDownloads = [0, links.length]
+		Readline.cursorTo(process.stdout, 0)
+		Monitor.taskProcess(task)
+
+		for (const [i, link] of [...new Set(links)].entries())
+		{
+			let url = !link.startsWith('http://') && !link.startsWith('https://')
+				? await Utils.checkUrl(new URL(link, task.endpoint).href, true)
+				: await Utils.checkUrl(new URL(link).href, true)
+			
+			// If have not parameter outputDir maybe can return base64 ?
+			let outputDir = this.options.outputDir
+				? this.options.outputDir
+				: task.parameters.outputDir
+
+			let filename = outputDir + new URL(url).pathname
+			let file = await Utils.download(filename, url)
+
+			resources.push(filename)
+
+			if (this.options.debug) {
+				task.countDownloads = [i+1, [...new Set(links)].length]
+				if (i+1 == [...new Set(links)].length) {
+					await new Promise(resolve => setTimeout(resolve, 1500))
+				}
+			}
+		}
+
+		return resources
+	}
+}

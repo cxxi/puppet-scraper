@@ -1,31 +1,18 @@
 'use strict'
 
-import fs from 'fs'
+import fs     from 'fs'
+import http   from 'http'
+import https  from 'https'
 
+import Task   from './task.js'
 
-const defaultOptions = {
-	rawResult: false,
-	quiet: false, // useless ?
-	merge: false,
-	sort: false,
-	timeout: 3600000,
-	debug: false,
-	_dlSeparator: '>'
-}
-
-class Abstract
+class Core
 {
 	constructor(options)
 	{
-		if (this.constructor.name === Abstract.constructor.name) {
-			throw `Abstract class "${Abstract.constructor.name}" cannot be instantiated directly`
+		if (this.constructor.name === Core.constructor.name) {
+			throw `Core class "${Core.constructor.name}" cannot be instantiated directly`
 		}
-
-		Object.defineProperty(this, 'rootPath', {
-			configurable: false,
-			writable: false,
-			value: import.meta.url.match(/^file:\/\/(.*puppet-scraper\/)/)[1]
-		})
 
 		this.options = options
 		Object.defineProperty(this.options, '_apply', {
@@ -36,6 +23,18 @@ class Abstract
 				this.options = Utils.deepAssign(this.options, option)
 			}
 		})
+	}
+
+	_initialization(options)
+	{
+		this.options._apply(options)
+		
+		Object.defineProperty(this.options, '_timeout', {
+			enumerable: this.options.debug,
+			configurable: true,
+			writable: true,
+			value: this.options._timeout
+		})
 
 		Object.defineProperty(this.options, '_dlSeparator', {
 			enumerable: this.options.debug,
@@ -43,11 +42,7 @@ class Abstract
 			writable: true,
 			value: this.options._dlSeparator
 		})
-	}
 
-	_initialization(options)
-	{
-		this.options._apply(options)
 		this.tasksManager = new TasksManager(this.options)
 	}
 
@@ -71,104 +66,6 @@ class Abstract
 			return this.tasksManager.build(await import(target))
 		}
 	}
-
-	_err(err)
-	{
-		Monitor.renderError(err)
-	}
-}
-
-class Task
-{
-	constructor(name = false)
-	{
-		if (name.constructor !== String || name.length < 1) {
-			throw 'Initialization failed'
-		}
-
-		this.parameters = {}
-		this.startsTime = null
-		this.endpoint   = null
-		this.name       = null
-		
-		Object.defineProperty(this, 'name', {
-			configurable: false,
-			writable: false,
-			value: name
-		})
-
-		function* _lifecycle(s = false)
-		{
-			let i = 0; while(true)
-			{
-				i = i === 6 ? 2 : i
-				i = s.constructor === Number ? s : i
-				yield i++
-			}
-		}
-
-		const lifecycle = _lifecycle()
-		this.state = null
-
-		Object.defineProperty(this, '_up', {
-			enumerable: false,
-			configurable: false,
-			writable: false,
-			value: _ => {
-
-				switch(lifecycle.next().value)
-				{
-					case 0: this.state = 'notdefined';break
-					case 1: this.state = 'defined'   ;break
-					case 2: this.state = 'ready'     ;break
-					case 3: this.state = 'pending'   ;break
-					case 4: this.state = 'running'   ;break
-					case 5: this.state = 'finished'  ;break
-				}
-
-				return this
-			}
-		})
-
-		this.run = async _ => null
-		this.result = {}
-
-		Object.seal(this)
-		return this._up()
-	}
-
-	define(parameters = {}, run)
-	{
-		if (parameters.endpoint.constructor !== String) {
-			throw 'Invalid <parameters.endpoint>, must be a valid URL'
-		}
-
-		Object.defineProperty(this, 'endpoint', {
-			configurable: false,
-			writable: false,
-			value: parameters.endpoint
-		})
-
-		delete parameters.endpoint
-
-		if (parameters.constructor !== Object) {
-			throw 'Invalid <parameters> argument must be an Object'
-		}
-
-		this.parameters = parameters
-
-		if (run.constructor !== (async _ => {}).constructor) {
-			throw 'Invalid <run> argument, must be an Async Function'
-		}
-
-		Object.defineProperty(this, 'run', {
-			configurable: false,
-			writable: false,
-			value: run
-		})
-
-		return this._up()
-	}
 }
 
 class TasksManager
@@ -176,12 +73,7 @@ class TasksManager
 	constructor(args = {})
 	{
 		this.queue = []
-		this.shouldSort = false
-		this.shouldMerge = false
-
-		if (typeof args.outputDir === 'string') {
-			this.outputDir = args.outputDir
-		}
+		this.outputDir = args.outputDir
 
 		Object.defineProperty(this, 'shouldSort', {
 			enumerable: false,
@@ -203,7 +95,7 @@ class TasksManager
 
 	build(script)
 	{
-		return (new Task(script.name)).define(script.parameters, script.run)
+		return (new Task(script.name)).define(script.parameters, script.run, script.callback)
 	}
 
 	list()
@@ -263,7 +155,9 @@ class TasksManager
 
 	async getResult(name = false)
 	{
-		let unfinished = this.queue.filter(t => t.state != 'finished')
+		Monitor.out('\n')
+
+		let unfinished = this.queue.filter(t => t.state != '----ended----')
 		let result = { v: {}, l: 0 }
 
 		if (unfinished.length > 0){
@@ -283,12 +177,115 @@ class TasksManager
 			this.queue.forEach(task => result.v[task.name] = task.result.data)
 		}
 
-		if (this.outputDir) {
+		if (typeof this.outputDir === 'string') {
+
 			await Utils.writeFile(`${this.outputDir}/items.json`, result.v)
+			Monitor.out(`> ${Monitor.n} \x1b[36mresult\x1b[0m > ${this.outputDir}\n`)
+
+		} else {
+
+			for (const [script, scraped] of Object.entries(result.v))
+			{
+				Monitor.out(`> ${Monitor.n} \x1b[36mresult\x1b[0m ${script}\n`)
+				for (const [key, val] of Object.entries(scraped))
+				{
+					Monitor.out(`${key}: ${JSON.stringify(val, null, 2)}\n`)
+				}
+			}
 		}
 
+		Monitor.out(1)
 		return result
 	}
+}
+
+class Monitor
+{
+	static n = `[\x1b[34m\x1b[1mScraper\x1b[0m]`
+
+	static out(a, b = 0)
+	{
+		switch(a.constructor)
+		{
+			case String: {
+				process.stdout.write(a)
+				for(let i=0;i<b;i++) process.stdout.write('\n')
+				break
+			}
+			case Number: {
+				for(let i=0;i<a;i++) process.stdout.write('\n')
+				break
+			}
+		}
+	}
+
+	static runContext(options)
+	{
+		const refSize = Math.max(...Object.keys(options).map(o => o.length))+1
+
+		Monitor.out(`\n> ${Monitor.n} \x1b[36mPrepare\x1b[0m to running the tasks in queue...`, 2)
+		Monitor.out(`> ${Monitor.n} \x1b[36mOptions\x1b[0m`, 1)
+		for (let [k, v] of Object.entries(options))
+		{
+			k = k+String(' ').repeat(refSize-k.length)
+			Monitor.out(`> ${Monitor.n} \u0B9F\u1397 ${k}: ${v}`, 1)
+		}
+		Monitor.out(1)
+	}
+
+	static taskProcess(task, endline = false)
+	{
+		task._up()
+		const baseStr = `> ${Monitor.n} ${Monitor.formatTask(task.state)}`
+		switch(task.state)
+		{
+			case '----ended----': 
+				process.stdout.write(baseStr)
+				break
+
+			default: 
+				process.stdout.write(`${baseStr}${String(' ').repeat(15)}| ${task.name}`)
+				break
+		}
+
+		if (endline) process.stdout.write(`\n`)
+		return task
+	}
+
+	static formatTask(state)
+	{
+		switch(state)
+		{
+			case '----ready----': return `\x1b[43m\x1b[37m ${state.toUpperCase()} \x1b[0m`
+			case '---pending---': return `\x1b[43m\x1b[37m ${state.toUpperCase()} \x1b[0m`
+			case '---running---': return `\x1b[42m\x1b[37m ${state.toUpperCase()} \x1b[0m`
+			case '-downloading-': return `\x1b[45m\x1b[37m ${state.toUpperCase()} \x1b[0m`
+			case '----ended----': return `\x1b[46m\x1b[37m ${state.toUpperCase()} \x1b[0m`
+		}
+	}
+
+	static taskRuntime(task, time)
+	{
+		let t = time/1000,
+			r = 13-(t.toString().length),
+			d = `${String(' ').repeat(r)}\x1b[37m${t}s\x1b[0m |`
+
+		if (task.state == '-downloading-') {
+			const dlStr = `${task.countDownloads[0]}/${task.countDownloads[1]}`
+			process.stdout.write(`> ${Monitor.n} ${Monitor.formatTask(task.state)}${d} ${task.name} \x1b[37m ${dlStr} downloaded\x1b[0m`)
+		} else {
+			process.stdout.write(`> ${Monitor.n} ${Monitor.formatTask(task.state)}${d} ${task.name}`)
+		} 
+	}
+
+	static renderError(e, code = false)
+	{
+		const color = `\x1b[31m`
+		const head = code ? `[ERROR] #${code}` : `[ERROR]`
+		console.error(new Error(`${color}${head}\n> ${e}\n`))
+		process.exit(1)
+	}
+
 }
 
 class Utils
@@ -344,15 +341,23 @@ class Utils
 		return returnUrl && _check(url) ? url : _check(url)
 	}
 
-	static async streamSetup(filename)
+	static async download(filename, url)
 	{
 		let dir = filename.split('/').slice(0, filename.split('/').length-1).join('/')
 		await fs.existsSync(dir) || await fs.mkdirSync(dir, { recursive: true })
-		return fs.createWriteStream(filename)
+		let file = fs.createWriteStream(filename)
+		return new Promise((resolve, reject) => {
+			https.get(url, response => {
+				response.pipe(file)
+				file.on('error', _ => { file.end(); reject(err) })
+				file.on('finish', _ => { file.close(); resolve(file) })
+			})
+		})
 	}
 
 	static async writeFile(filename, response)
 	{
+		// move all writefile and all about fs. in this file
 		await fs.writeFileSync(filename, JSON.stringify(response, null, 2))
 		return filename
 		// if (this.options.outputDir) {
@@ -363,80 +368,4 @@ class Utils
 	}
 }
 
-class Monitor
-{
-	static n = `[\x1b[34m\x1b[1mScraper\x1b[0m]`
-
-	static out(a, b = 0)
-	{
-		switch(a.constructor)
-		{
-			case String: {
-				process.stdout.write(a)
-				for(let i=0;i<b;i++) process.stdout.write('\n')
-				break
-			}
-			case Number: {
-				for(let i=0;i<a;i++) process.stdout.write('\n')
-				break
-			}
-		}
-	}
-
-	static runContext(options)
-	{
-		const refSize = Math.max(...Object.keys(options).map(o => o.length))+1
-
-		Monitor.out(`\n> ${Monitor.n} \x1b[36mPrepare\x1b[0m to running the tasks in queue...`, 2)
-		Monitor.out(`> ${Monitor.n} \x1b[36mOptions\x1b[0m`, 1)
-		for (let [k, v] of Object.entries(options))
-		{
-			k = k+String(' ').repeat(refSize-k.length)
-			Monitor.out(`> ${Monitor.n} \u0B9F\u1397 ${k}: ${v}`, 1)
-		}
-		Monitor.out(1)
-	}
-
-	static taskProcess(task, endline = false)
-	{
-		const format = state => {
-			switch(state)
-			{
-				case 'ready'   : return `\x1b[43m\x1b[37m ${task.state}    \x1b[0m`
-				case 'pending' : return `\x1b[43m\x1b[37m ${task.state}  \x1b[0m`
-				case 'running' : return `\x1b[42m\x1b[37m ${task.state}  \x1b[0m`
-				case 'finished': return `\x1b[46m\x1b[37m ${task.state} \x1b[0m`
-			}
-		}
-
-		task._up()
-		const baseStr = `> ${Monitor.n} ${format(task.state)}`
-		task.state == 'finished'
-			? process.stdout.write(baseStr)
-			: process.stdout.write(`${baseStr}${String(' ').repeat(14)}| ${task.name}`)
-
-		if (endline) process.stdout.write(`\n`)
-
-		return task
-	}
-
-	static taskRuntime(task, time)
-	{
-		let t = time/1000,
-			r = 12-(t.toString().length),
-			d = `${String(' ').repeat(r)}${t}s |`
-
-		process.stdout.write(`> ${Monitor.n} \x1b[42m\x1b[37m ${task.state}  \x1b[0m${d} ${task.name}`)
-	}
-
-	static renderError(e, code = false)
-	{
-		const color = `\x1b[31m`
-		const head = code ? `[ERROR] #${code}` : `[ERROR]`
-		console.error(new Error(`${color}${head}\n> ${e}\n`))
-		process.exit(1)
-	}
-
-}
-
-export { Abstract, defaultOptions, Task, TasksManager, Utils, Monitor }
+export { Core, Monitor, Utils }

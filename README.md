@@ -14,6 +14,19 @@ npm link puppet-scraper
 
 ## Usage
 
+import Scraper from 'puppet-scraper'
+const scraper = new Scraper(/*scrapConf.options*/)
+
+/*await scraper.enqueue(`${rootPath}/${scrapConf.scriptsDir}`)
+		await scraper.scrap()*/
+
+option 
+debug ?
+
+
+
+
+
 Basic initialization puppet-scraper:
 
 ```js
